@@ -1,4 +1,46 @@
+# 编译输出
 bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
+# 测试与覆盖率
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# 敏感文件 - 防止密钥泄露
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+*_secret*
+*_credential*
+.id_rsa*
+
+# IDE 与编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 工具目录
 .serena/
 .claude/
