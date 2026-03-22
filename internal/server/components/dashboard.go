@@ -11,7 +11,7 @@ import (
 // RenderRunningSessions 渲染正在运行的会话表格
 func RenderRunningSessions(state *domain.OrchestratorState, now time.Time) string {
 	if len(state.Running) == 0 {
-		return `<p class="empty-state">No active sessions.</p>`
+		return `<p class="empty-state">暂无活跃 Session。</p>`
 	}
 
 	html := `<div class="table-wrap">
@@ -81,7 +81,7 @@ func RenderRunningSessions(state *domain.OrchestratorState, now time.Time) strin
                                     <div class="session-stack">`
 		if sessionID != "" {
 			html += `
-                                        <button type="button" class="subtle-button" data-label="Copy ID" data-copy="` + sessionID + `" onclick="navigator.clipboard.writeText(this.dataset.copy); this.textContent = 'Copied'; clearTimeout(this._copyTimer); this._copyTimer = setTimeout(() => { this.textContent = this.dataset.label }, 1200);">Copy ID</button>`
+                                        <button type="button" class="subtle-button" data-label="复制 ID" data-copy="` + sessionID + `" onclick="navigator.clipboard.writeText(this.dataset.copy); this.textContent = '已复制'; clearTimeout(this._copyTimer); this._copyTimer = setTimeout(() => { this.textContent = this.dataset.label }, 1200);">复制 ID</button>`
 		} else {
 			html += `
                                         <span class="muted">n/a</span>`
@@ -124,7 +124,7 @@ func RenderRunningSessions(state *domain.OrchestratorState, now time.Time) strin
 // RenderRetryQueue 渲染重试队列表格
 func RenderRetryQueue(state *domain.OrchestratorState) string {
 	if len(state.RetryAttempts) == 0 {
-		return `<p class="empty-state">No issues are currently backing off.</p>`
+		return `<p class="empty-state">当前没有 Issues 在等待 Retry。</p>`
 	}
 
 	html := `<div class="table-wrap">
@@ -186,14 +186,18 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
             <header class="hero-card">
                 <div class="hero-grid">
                     <div>
-                        <p class="eyebrow">Symphony Observability</p>
-                        <h1 class="hero-title">Operations Dashboard</h1>
-                        <p class="hero-copy">Current state, retry pressure, token usage, and orchestration health for the active Symphony runtime.</p>
+                        <p class="eyebrow">Symphony 可观测性</p>
+                        <h1 class="hero-title">运维仪表板</h1>
+                        <p class="hero-copy">实时状态、Retry 压力、Token 使用量以及当前 Symphony Runtime 的编排健康状况。</p>
                     </div>
                     <div class="status-stack">
                         <span class="status-badge status-badge-live" id="live-indicator">
                             <span class="status-badge-dot"></span>
                             Live
+                        </span>
+                        <span class="status-badge status-badge-offline">
+                            <span class="status-badge-dot"></span>
+                            Offline
                         </span>
                     </div>
                 </div>
@@ -203,13 +207,13 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
                 <article class="metric-card">
                     <p class="metric-label">Running</p>
                     <p class="metric-value numeric" id="metric-running">` + strconv.Itoa(len(state.Running)) + `</p>
-                    <p class="metric-detail">Active issue sessions in the current runtime.</p>
+                    <p class="metric-detail">当前 Runtime 中的活跃 Issue Session。</p>
                 </article>
 
                 <article class="metric-card">
                     <p class="metric-label">Retrying</p>
                     <p class="metric-value numeric" id="metric-retrying">` + strconv.Itoa(len(state.RetryAttempts)) + `</p>
-                    <p class="metric-detail">Issues waiting for the next retry window.</p>
+                    <p class="metric-detail">等待下一 Retry 窗口的 Issues。</p>
                 </article>
 
                 <article class="metric-card">
@@ -221,7 +225,7 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
                 <article class="metric-card">
                     <p class="metric-label">Runtime</p>
                     <p class="metric-value numeric" id="metric-runtime">` + common.FormatRuntimeSeconds(common.TotalRuntimeSeconds(state, now)) + `</p>
-                    <p class="metric-detail">Total Codex runtime across completed and active sessions.</p>
+                    <p class="metric-detail">已完成和活跃 Session 的总 Codex Runtime。</p>
                 </article>
             </section>
 
@@ -229,7 +233,7 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
                 <div class="section-header">
                     <div>
                         <h2 class="section-title">Rate limits</h2>
-                        <p class="section-copy">Latest upstream rate-limit snapshot, when available.</p>
+                        <p class="section-copy">上游 Rate limit 最新快照，如有。</p>
                     </div>
                 </div>
                 <pre class="code-panel" id="rate-limits">` + common.PrettyValue(state.CodexRateLimits) + `</pre>
@@ -239,7 +243,7 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
                 <div class="section-header">
                     <div>
                         <h2 class="section-title">Running sessions</h2>
-                        <p class="section-copy">Active issues, last known agent activity, and token usage.</p>
+                        <p class="section-copy">活跃 Issues、最后已知的 Agent 活动及 Token 使用量。</p>
                     </div>
                 </div>
                 <div id="running-sessions">` + RenderRunningSessions(state, now) + `</div>
@@ -249,7 +253,7 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
                 <div class="section-header">
                     <div>
                         <h2 class="section-title">Retry queue</h2>
-                        <p class="section-copy">Issues waiting for the next retry window.</p>
+                        <p class="section-copy">等待下一 Retry 窗口的 Issues。</p>
                     </div>
                 </div>
                 <div id="retry-queue">` + RenderRetryQueue(state) + `</div>
@@ -259,6 +263,8 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
     <script>
     document.body.addEventListener('htmx:sseMessage', function(evt) {
         if (evt.detail.type === 'state') {
+            // 连接成功，添加 class 显示 Live 指示器
+            document.body.classList.add('hx-connected');
             try {
                 const data = JSON.parse(evt.detail.data);
                 updateDashboard(data);
@@ -296,7 +302,7 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
 
     function renderRunningTable(running) {
         if (!running || running.length === 0) {
-            return '<p class="empty-state">No active sessions.</p>';
+            return '<p class="empty-state">暂无活跃 Session。</p>';
         }
 
         let html = '<div class="table-wrap"><table class="data-table data-table-running">' +
@@ -326,7 +332,7 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
                 '</div></td>' +
                 '<td><span class="' + stateClass + '">' + escapeHtml(entry.state) + '</span></td>' +
                 '<td><div class="session-stack">' +
-                (entry.session_id ? '<button type="button" class="subtle-button" onclick="copyId(this, \\'' + escapeHtml(entry.session_id) + '\\')">Copy ID</button>' : '<span class="muted">n/a</span>') +
+                (entry.session_id ? '<button type="button" class="subtle-button" onclick="copyId(this, \\'' + escapeHtml(entry.session_id) + '\\')">复制 ID</button>' : '<span class="muted">n/a</span>') +
                 '</div></td>' +
                 '<td class="numeric">' + escapeHtml(entry.runtime_turns || 'n/a') + '</td>' +
                 '<td><div class="detail-stack">' +
@@ -346,7 +352,7 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
 
     function renderRetryTable(retrying) {
         if (!retrying || retrying.length === 0) {
-            return '<p class="empty-state">No issues are currently backing off.</p>';
+            return '<p class="empty-state">当前没有 Issues 在等待 Retry。</p>';
         }
 
         let html = '<div class="table-wrap"><table class="data-table" style="min-width: 680px;">' +
@@ -399,9 +405,9 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
 
     function copyId(btn, id) {
         navigator.clipboard.writeText(id);
-        btn.textContent = 'Copied';
+        btn.textContent = '已复制';
         clearTimeout(btn._copyTimer);
-        btn._copyTimer = setTimeout(() => btn.textContent = 'Copy ID', 1200);
+        btn._copyTimer = setTimeout(() => btn.textContent = '复制 ID', 1200);
     }
     </script>
 </body>

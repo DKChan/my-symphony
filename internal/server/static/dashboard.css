@@ -85,7 +85,7 @@ button.secondary:hover {
 .subtle-button {
   appearance: none;
   border: 1px solid var(--line-strong);
-  background: rgba(255, 255,255, 0.72);
+  background: rgba(255, 255, 255, 0.72);
   color: var(--muted);
   border-radius: 999px;
   padding: 0.34rem 0.72rem;
@@ -215,9 +215,26 @@ pre,
 }
 
 .status-badge-live {
+  display: none;
   background: var(--accent-soft);
   border-color: rgba(16, 163, 127, 0.18);
   color: var(--accent-ink);
+}
+
+.status-badge-offline {
+  background: #f5f5f7;
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
+
+htmx-connected .status-badge-live,
+[data-hx-connected] .status-badge-live {
+  display: inline-flex;
+}
+
+htmx-connected .status-badge-offline,
+[data-hx-connected] .status-badge-offline {
+  display: none;
 }
 
 .metric-grid {
