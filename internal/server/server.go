@@ -53,3 +53,8 @@ func (s *Server) onStateChange() {
 func (s *Server) Run() error {
 	return s.engine.Run(":" + strconv.Itoa(s.port))
 }
+
+// Port 返回服务器端口
+func (s *Server) Port() int {
+	return s.port
+}
