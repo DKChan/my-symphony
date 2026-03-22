@@ -42,7 +42,11 @@ func RenderRunningSessions(state *domain.OrchestratorState, now time.Time) strin
 			sessionID = entry.Session.SessionID
 		}
 
-		stateClass := common.StateBadgeClass(entry.Issue.State)
+		issueState := ""
+		if entry.Issue != nil {
+			issueState = entry.Issue.State
+		}
+		stateClass := common.StateBadgeClass(issueState)
 		runtimeTurns := common.FormatRuntimeAndTurns(entry.StartedAt, entry.TurnCount, now)
 
 		lastEvent := "n/a"
@@ -75,7 +79,7 @@ func RenderRunningSessions(state *domain.OrchestratorState, now time.Time) strin
                                     </div>
                                 </td>
                                 <td>
-                                    <span class="` + stateClass + `">` + entry.Issue.State + `</span>
+                                    <span class="` + stateClass + `">` + issueState + `</span>
                                 </td>
                                 <td>
                                     <div class="session-stack">`
@@ -178,10 +182,9 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
     <title>Symphony Observability</title>
     <link rel="stylesheet" href="/dashboard.css">
     <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
-    <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
 </head>
 <body>
-    <main class="app-shell" hx-ext="sse" sse-connect="/events" sse-swap="state">
+    <main class="app-shell">
         <section class="dashboard-shell">
             <header class="hero-card">
                 <div class="hero-grid">
@@ -261,18 +264,23 @@ func RenderDashboardHTML(state *domain.OrchestratorState, now time.Time) string 
         </section>
     </main>
     <script>
-    document.body.addEventListener('htmx:sseMessage', function(evt) {
-        if (evt.detail.type === 'state') {
-            // 连接成功，添加 class 显示 Live 指示器
-            document.body.classList.add('hx-connected');
-            try {
-                const data = JSON.parse(evt.detail.data);
-                updateDashboard(data);
-            } catch (e) {
-                console.error('Failed to parse SSE data:', e);
-            }
+    // 使用原生 EventSource API 处理 SSE
+    const eventSource = new EventSource('/events');
+
+    eventSource.addEventListener('state', function(e) {
+        document.body.classList.add('hx-connected');
+        try {
+            const data = JSON.parse(e.data);
+            updateDashboard(data);
+        } catch (err) {
+            console.error('Failed to parse SSE data:', err);
         }
     });
+
+    eventSource.onerror = function(e) {
+        console.error('SSE connection error:', e);
+        document.body.classList.remove('hx-connected');
+    };
 
     function updateDashboard(data) {
         // 更新指标

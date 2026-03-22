@@ -25,6 +25,8 @@ func NewTracker(cfg *config.Config) Tracker {
 	switch cfg.Tracker.Kind {
 	case "github":
 		return NewGitHubClient(cfg.Tracker.APIKey, cfg.Tracker.Repo)
+	case "mock":
+		return NewMockClient(cfg.Tracker.MockIssues)
 	default:
 		// 默认 linear
 		return NewLinearClient(cfg.Tracker.Endpoint, cfg.Tracker.APIKey, cfg.Tracker.ProjectSlug)

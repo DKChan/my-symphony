@@ -25,7 +25,7 @@ type Config struct {
 
 // TrackerConfig 跟踪器配置
 type TrackerConfig struct {
-	// Kind 跟踪器类型：linear 或 github
+	// Kind 跟踪器类型：linear、github 或 mock
 	Kind string `json:"kind"`
 	// Endpoint API端点
 	Endpoint string `json:"endpoint"`
@@ -39,6 +39,19 @@ type TrackerConfig struct {
 	ActiveStates []string `json:"active_states"`
 	// TerminalStates 终态列表
 	TerminalStates []string `json:"terminal_states"`
+	// MockIssues Mock问题列表（mock tracker专用）
+	MockIssues []MockIssueConfig `json:"mock_issues,omitempty"`
+}
+
+// MockIssueConfig Mock问题配置
+type MockIssueConfig struct {
+	ID          string   `json:"id"`
+	Identifier  string   `json:"identifier"`
+	Title       string   `json:"title"`
+	Description string   `json:"description,omitempty"`
+	State       string   `json:"state"`
+	Priority    int      `json:"priority,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
 }
 
 // PollingConfig 轮询配置
@@ -189,6 +202,36 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 		}
 		if terminalStates := parseStringList(tracker["terminal_states"]); len(terminalStates) > 0 {
 			cfg.Tracker.TerminalStates = terminalStates
+		}
+		// 解析 mock_issues
+		if mockIssues, ok := tracker["mock_issues"].([]interface{}); ok {
+			for _, item := range mockIssues {
+				if mi, ok := item.(map[string]interface{}); ok {
+					mockIssue := MockIssueConfig{}
+					if id, ok := mi["id"].(string); ok {
+						mockIssue.ID = id
+					}
+					if identifier, ok := mi["identifier"].(string); ok {
+						mockIssue.Identifier = identifier
+					}
+					if title, ok := mi["title"].(string); ok {
+						mockIssue.Title = title
+					}
+					if desc, ok := mi["description"].(string); ok {
+						mockIssue.Description = desc
+					}
+					if state, ok := mi["state"].(string); ok {
+						mockIssue.State = state
+					}
+					if priority, ok := parseInt(mi["priority"]); ok && priority > 0 {
+						mockIssue.Priority = int(priority)
+					}
+					if labels := parseStringList(mi["labels"]); len(labels) > 0 {
+						mockIssue.Labels = labels
+					}
+					cfg.Tracker.MockIssues = append(cfg.Tracker.MockIssues, mockIssue)
+				}
+			}
 		}
 	}
 
@@ -389,11 +432,19 @@ func (c *Config) ValidateDispatchConfig() *Validation {
 	var errors []string
 
 	// 验证 tracker.kind
-	supportedTrackers := map[string]bool{"linear": true, "github": true}
+	supportedTrackers := map[string]bool{"linear": true, "github": true, "mock": true}
 	if c.Tracker.Kind == "" {
 		errors = append(errors, "tracker.kind is required")
 	} else if !supportedTrackers[c.Tracker.Kind] {
-		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: linear, github)", c.Tracker.Kind))
+		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: linear, github, mock)", c.Tracker.Kind))
+	}
+
+	// mock 类型不需要 api_key，跳过验证
+	if c.Tracker.Kind == "mock" {
+		return &Validation{
+			Valid:  len(errors) == 0,
+			Errors: errors,
+		}
 	}
 
 	// 验证 tracker.api_key

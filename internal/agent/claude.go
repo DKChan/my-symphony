@@ -142,6 +142,7 @@ func (r *claudeRunner) runOnce(
 	// 构建 claude 命令
 	args := []string{
 		"--print",
+		"--verbose",
 		"--output-format", "stream-json",
 		"--no-session-persistence",
 	}
