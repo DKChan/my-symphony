@@ -17,6 +17,8 @@ type Config struct {
 	Workspace WorkspaceConfig `json:"workspace"`
 	Hooks     HooksConfig     `json:"hooks"`
 	Agent     AgentConfig     `json:"agent"`
+	Claude    *ClaudeConfig   `json:"claude,omitempty"`
+	OpenCode  *OpenCodeConfig `json:"opencode,omitempty"`
 	Codex     CodexConfig     `json:"codex"`
 	Server    *ServerConfig   `json:"server,omitempty"`
 }
@@ -99,6 +101,26 @@ type CodexConfig struct {
 	ReadTimeoutMs int64 `json:"read_timeout_ms"`
 	// StallTimeoutMs 停滞超时（毫秒）
 	StallTimeoutMs int64 `json:"stall_timeout_ms"`
+}
+
+// ClaudeConfig Claude Code CLI配置（当 agent.kind: "claude" 时使用）
+type ClaudeConfig struct {
+	// Command CLI命令（默认: claude）
+	Command string `json:"command,omitempty"`
+	// ExtraArgs 额外命令行参数（会追加到默认参数之后）
+	// 示例: ["--model", "opus-4", "--max-tokens", "4096"]
+	ExtraArgs []string `json:"extra_args,omitempty"`
+	// SkipPermissions 跳过权限检查（默认: true）
+	SkipPermissions bool `json:"skip_permissions,omitempty"`
+}
+
+// OpenCodeConfig OpenCode CLI配置（当 agent.kind: "opencode" 时使用）
+type OpenCodeConfig struct {
+	// Command CLI命令（默认: opencode）
+	Command string `json:"command,omitempty"`
+	// ExtraArgs 额外命令行参数（会追加到默认参数之后）
+	// 示例: ["--model", "gpt-4", "--provider", "openai"]
+	ExtraArgs []string `json:"extra_args,omitempty"`
 }
 
 // ServerConfig HTTP服务器配置
@@ -229,6 +251,34 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 					cfg.Agent.MaxConcurrentAgentsByState[strings.ToLower(strings.TrimSpace(state))] = int(limit)
 				}
 			}
+		}
+	}
+
+	// 解析 claude 配置
+	if claude, ok := raw["claude"].(map[string]interface{}); ok {
+		cfg.Claude = &ClaudeConfig{}
+		if command, ok := claude["command"].(string); ok {
+			cfg.Claude.Command = command
+		}
+		if skipPerms, ok := claude["skip_permissions"].(bool); ok {
+			cfg.Claude.SkipPermissions = skipPerms
+		} else {
+			// 默认跳过权限检查
+			cfg.Claude.SkipPermissions = true
+		}
+		if extraArgs := parseStringList(claude["extra_args"]); len(extraArgs) > 0 {
+			cfg.Claude.ExtraArgs = extraArgs
+		}
+	}
+
+	// 解析 opencode 配置
+	if opencode, ok := raw["opencode"].(map[string]interface{}); ok {
+		cfg.OpenCode = &OpenCodeConfig{}
+		if command, ok := opencode["command"].(string); ok {
+			cfg.OpenCode.Command = command
+		}
+		if extraArgs := parseStringList(opencode["extra_args"]); len(extraArgs) > 0 {
+			cfg.OpenCode.ExtraArgs = extraArgs
 		}
 	}
 

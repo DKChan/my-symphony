@@ -32,16 +32,52 @@ hooks:
   timeout_ms: 60000
 
 agent:
-  max_concurrent_agents: 10
-  max_turns: 20
-  max_retry_backoff_ms: 300000  # 5分钟最大重试退避
+  # 代理类型: codex（默认）、claude、opencode
+  # - codex: 使用 Codex app-server JSON-RPC 协议（需要 codex 配置段）
+  # - claude: 使用 Claude Code CLI（需要 claude 配置段）
+  # - opencode: 使用 OpenCode CLI（需要 opencode 配置段）
+  kind: "claude"
+  # 全局自定义命令（可选，优先级低于各代理专用配置）
+  # command: "claude --print --output-format=stream-json --model opus-4"
+  max_concurrent_agents: 10  # 全局最大并发代理数
+  max_turns: 20              # 每个代理的最大对话轮次
+  max_retry_backoff_ms: 300000  # 最大重试退避时间（毫秒），5分钟
+  # 按问题状态的并发限制（可选），例如 In Progress 状态最多3个
+  max_concurrent_agents_by_state:
+    "In Progress": 3
+  # 轮次超时（毫秒），仅用于非 codex agent（claude/opencode）
+  # turn_timeout_ms: 3600000  # 默认1小时
 
+# Claude Code CLI 配置（当 agent.kind: "claude" 时使用）
+# CLI 默认命令: claude --print --output-format=stream-json --dangerously-skip-permissions --no-session-persistence
+claude:
+  command: "claude"           # CLI 命令（默认: claude）
+  skip_permissions: true      # 跳过权限检查（默认: true）
+  # extra_args:               # 额外命令行参数（会追加到默认参数之后）
+  #   - "--model"
+  #   - "opus-4"
+  #   - "--max-tokens"
+  #   - "4096"
+  #   - "--temperature"
+  #   - "0.7"
+
+# OpenCode CLI 配置（当 agent.kind: "opencode" 时使用）
+# CLI 默认命令: opencode run "<prompt>" --output-format json
+opencode:
+  command: "opencode"         # CLI 命令（默认: opencode）
+  # extra_args:               # 额外命令行参数（会追加到默认参数之后）
+  #   - "--model"
+  #   - "gpt-4"
+  #   - "--provider"
+  #   - "openai"
+
+# Codex 代理专用配置（当 agent.kind: "codex" 时使用）
 codex:
-  command: "codex app-server"
-  approval_policy: "suggest"  # 自动审批策略
-  turn_timeout_ms: 3600000  # 1小时轮次超时
-  read_timeout_ms: 5000
-  stall_timeout_ms: 300000  # 5分钟停滞检测
+  command: "codex app-server"  # Codex 启动命令
+  approval_policy: "suggest"  # 自动审批策略: suggest（建议）、auto（自动批准）、manual（手动）
+  turn_timeout_ms: 3600000     # 轮次超时（毫秒），1小时
+  read_timeout_ms: 5000       # 读取超时（毫秒）
+  stall_timeout_ms: 300000    # 停滞检测超时（毫秒），5分钟无输出则认为停滞
 
 server:
   port: 8080  # HTTP服务器端口

@@ -136,11 +136,19 @@ func (r *openCodeRunner) runOnce(
 	// 构建 opencode 命令
 	// opencode run "<prompt>" --output-format json
 	command := "opencode"
+	if r.cfg.OpenCode != nil && r.cfg.OpenCode.Command != "" {
+		command = r.cfg.OpenCode.Command
+	}
 	if r.cfg.Agent.Command != "" {
 		command = r.cfg.Agent.Command
 	}
 
 	args := []string{"run", prompt, "--output-format", "json"}
+
+	// 追加额外参数
+	if r.cfg.OpenCode != nil && len(r.cfg.OpenCode.ExtraArgs) > 0 {
+		args = append(args, r.cfg.OpenCode.ExtraArgs...)
+	}
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = workspacePath
 

@@ -143,12 +143,28 @@ func (r *claudeRunner) runOnce(
 	args := []string{
 		"--print",
 		"--output-format", "stream-json",
-		"--dangerously-skip-permissions",
 		"--no-session-persistence",
+	}
+
+	// 跳过权限检查（默认开启）
+	skipPerms := true
+	if r.cfg.Claude != nil {
+		skipPerms = r.cfg.Claude.SkipPermissions
+	}
+	if skipPerms {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+
+	// 追加额外参数
+	if r.cfg.Claude != nil && len(r.cfg.Claude.ExtraArgs) > 0 {
+		args = append(args, r.cfg.Claude.ExtraArgs...)
 	}
 
 	// 支持自定义命令（例如指定模型）
 	command := "claude"
+	if r.cfg.Claude != nil && r.cfg.Claude.Command != "" {
+		command = r.cfg.Claude.Command
+	}
 	if r.cfg.Agent.Command != "" {
 		command = r.cfg.Agent.Command
 	}
