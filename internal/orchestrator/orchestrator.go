@@ -12,7 +12,9 @@ import (
 	"github.com/dministrator/symphony/internal/agent"
 	"github.com/dministrator/symphony/internal/config"
 	"github.com/dministrator/symphony/internal/domain"
+	"github.com/dministrator/symphony/internal/logging"
 	"github.com/dministrator/symphony/internal/tracker"
+	"github.com/dministrator/symphony/internal/workflow"
 	"github.com/dministrator/symphony/internal/workspace"
 )
 
@@ -23,6 +25,7 @@ type Orchestrator struct {
 	workspaceMgr   *workspace.Manager
 	agentRunner    agent.Runner
 	promptTemplate string
+	workflowEngine *workflow.Engine
 
 	// 运行时状态
 	mu           sync.RWMutex
@@ -30,6 +33,10 @@ type Orchestrator struct {
 	retryTimers  map[string]*time.Timer
 	startTime    time.Time
 	endedRuntime float64 // 已结束会话的累计运行时间
+	shuttingDown bool    // 是否正在关闭
+
+	// 取消控制
+	cancelContexts map[string]context.CancelFunc // 每个任务的取消函数
 
 	// 事件回调
 	onStateChange func()
@@ -43,7 +50,9 @@ func New(cfg *config.Config, promptTemplate string) *Orchestrator {
 		workspaceMgr:   workspace.NewManager(cfg),
 		agentRunner:    agent.NewRunner(cfg),
 		promptTemplate: promptTemplate,
+		workflowEngine: workflow.NewEngine(),
 		retryTimers:    make(map[string]*time.Timer),
+		cancelContexts: make(map[string]context.CancelFunc),
 		state: &domain.OrchestratorState{
 			PollIntervalMs:      cfg.Polling.IntervalMs,
 			MaxConcurrentAgents: cfg.Agent.MaxConcurrentAgents,
@@ -66,9 +75,21 @@ func (o *Orchestrator) SetOnStateChange(callback func()) {
 func (o *Orchestrator) Run(ctx context.Context) error {
 	o.startTime = time.Now()
 
+	// 初始化日志系统
+	if err := logging.Initialize(logging.Config{
+		Level:        o.cfg.Logging.Level,
+		Format:       o.cfg.Logging.Format,
+		FilePath:     o.cfg.Logging.FilePath,
+		EnableStdout: o.cfg.Logging.EnableStdout,
+	}); err != nil {
+		fmt.Printf("logging initialization warning: %v\n", err)
+	}
+
+	logging.Info("orchestrator started")
+
 	// 启动时清理终态工作空间
 	if err := o.startupCleanup(ctx); err != nil {
-		fmt.Printf("startup cleanup warning: %v\n", err)
+		logging.Warn("startup cleanup warning", "error", err.Error())
 	}
 
 	// 立即执行一次tick
@@ -81,6 +102,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			logging.Info("orchestrator stopped", "reason", ctx.Err().Error())
 			return ctx.Err()
 		case <-ticker.C:
 			o.tick(ctx)
@@ -96,14 +118,14 @@ func (o *Orchestrator) tick(ctx context.Context) {
 	// 2. 验证配置
 	validation := o.cfg.ValidateDispatchConfig()
 	if !validation.Valid {
-		fmt.Printf("dispatch validation failed: %v\n", validation.Errors)
+		logging.Error("dispatch validation failed", "errors", strings.Join(validation.Errors, ", "))
 		return
 	}
 
 	// 3. 获取候选问题
 	issues, err := o.trackerClient.FetchCandidateIssues(ctx, o.cfg.Tracker.ActiveStates)
 	if err != nil {
-		fmt.Printf("failed to fetch candidate issues: %v\n", err)
+		logging.Error("failed to fetch candidate issues", "error", err.Error())
 		return
 	}
 
@@ -148,7 +170,7 @@ func (o *Orchestrator) reconcile(ctx context.Context) {
 	// 刷新状态
 	refreshed, err := o.trackerClient.FetchIssueStatesByIDs(ctx, runningIDs)
 	if err != nil {
-		fmt.Printf("failed to refresh issue states: %v\n", err)
+		logging.Error("failed to refresh issue states", "error", err.Error())
 		return
 	}
 
@@ -196,7 +218,7 @@ func (o *Orchestrator) checkStalled() {
 		}
 
 		if now.Sub(lastActivity) > stallTimeout {
-			fmt.Printf("session %s appears stalled, terminating\n", id)
+			logging.LogSessionStalled(id, entry.Identifier)
 			go o.terminate(id, "stalled")
 		}
 	}
@@ -333,8 +355,8 @@ func (o *Orchestrator) dispatch(ctx context.Context, issue *domain.Issue, attemp
 
 	o.mu.Unlock()
 
-	// 启动worker
-	go o.runWorker(ctx, issue, attempt)
+	// 启动worker（支持取消）
+	go o.runWorkerWithCancel(ctx, issue, attempt)
 }
 
 // runWorker 运行worker
@@ -344,17 +366,25 @@ func (o *Orchestrator) runWorker(ctx context.Context, issue *domain.Issue, attem
 		retryAttempt = *attempt
 	}
 
-	fmt.Printf("starting worker for %s (attempt %d)\n", issue.Identifier, retryAttempt)
+	logging.LogWorkerStarted(issue.ID, issue.Identifier, retryAttempt)
 
 	// 创建工作空间
 	ws, err := o.workspaceMgr.CreateForIssue(ctx, issue.Identifier)
 	if err != nil {
+		logging.LogWorkspaceError(issue.ID, issue.Identifier, err)
 		o.onWorkerExit(issue.ID, issue.Identifier, fmt.Errorf("workspace error: %w", err), attempt)
 		return
 	}
 
+	logging.LogWorkspaceCreated(issue.ID, issue.Identifier, ws.Path)
+
 	// 运行 before_run 钩子
 	if err := o.workspaceMgr.RunBeforeRunHook(ctx, ws.Path); err != nil {
+		logging.Error("before_run hook failed",
+			"task_id", issue.ID,
+			"identifier", issue.Identifier,
+			"error", err.Error(),
+		)
 		o.onWorkerExit(issue.ID, issue.Identifier, fmt.Errorf("before_run hook error: %w", err), attempt)
 		return
 	}
@@ -375,15 +405,17 @@ func (o *Orchestrator) runWorker(ctx context.Context, issue *domain.Issue, attem
 	o.workspaceMgr.RunAfterRunHook(ctx, ws.Path)
 
 	if err != nil {
+		logging.LogAgentError(issue.ID, issue.Identifier, err)
 		o.onWorkerExit(issue.ID, issue.Identifier, err, attempt)
 		return
 	}
 
 	if result.Success {
-		fmt.Printf("worker for %s completed successfully (turns: %d)\n", issue.Identifier, result.TurnCount)
+		logging.LogTaskCompleted(issue.ID, issue.Identifier, "agent", result.TurnCount)
 		// 成功退出，安排续行重试
 		o.scheduleContinuationRetry(issue.ID, issue.Identifier)
 	} else {
+		logging.LogTaskFailed(issue.ID, issue.Identifier, "agent", fmt.Errorf("run failed: %v", result.Error))
 		o.onWorkerExit(issue.ID, issue.Identifier, fmt.Errorf("run failed: %v", result.Error), attempt)
 	}
 }
@@ -406,6 +438,9 @@ func (o *Orchestrator) onAgentEvent(issueID, event string, data any) {
 	entry.Session.LastCodexEvent = &event
 	entry.Session.LastCodexTimestamp = &now
 	entry.Session.LastCodexMessage = data
+
+	// 记录代理事件
+	logging.LogAgentEvent(issueID, event, data)
 
 	// 更新token统计
 	if params, ok := data.(map[string]any); ok {
@@ -433,6 +468,11 @@ func (o *Orchestrator) onWorkerExit(issueID, identifier string, err error, attem
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
+	var retryAttempt int
+	if attempt != nil {
+		retryAttempt = *attempt
+	}
+
 	entry, ok := o.state.Running[issueID]
 	if ok {
 		// 累加运行时间
@@ -442,8 +482,9 @@ func (o *Orchestrator) onWorkerExit(issueID, identifier string, err error, attem
 
 	delete(o.state.Claimed, issueID)
 
+	logging.LogWorkerExit(issueID, identifier, err, retryAttempt)
+
 	if err != nil {
-		fmt.Printf("worker for %s exited with error: %v\n", identifier, err)
 		o.scheduleRetry(issueID, identifier, attempt, err.Error())
 	}
 }
@@ -459,7 +500,7 @@ func (o *Orchestrator) terminate(issueID, reason string) {
 	}
 
 	delete(o.state.Claimed, issueID)
-	fmt.Printf("terminated %s: %s\n", issueID, reason)
+	logging.LogTermination(issueID, reason)
 }
 
 // terminateAndCleanup 终止并清理工作空间
@@ -471,7 +512,7 @@ func (o *Orchestrator) terminateAndCleanup(issueID string, entry *domain.Running
 		ctx := context.Background()
 		wsPath := o.workspaceMgr.GetWorkspacePath(entry.Issue.Identifier)
 		if err := o.workspaceMgr.RemoveWorkspace(ctx, wsPath); err != nil {
-			fmt.Printf("failed to cleanup workspace for %s: %v\n", entry.Issue.Identifier, err)
+			logging.LogWorkspaceError(issueID, entry.Issue.Identifier, err)
 		}
 	}
 }
@@ -509,7 +550,7 @@ func (o *Orchestrator) scheduleRetry(issueID, identifier string, attempt *int, e
 		o.onRetryTimer(issueID)
 	})
 
-	fmt.Printf("scheduled retry for %s in %v (attempt %d)\n", identifier, delay, nextAttempt)
+	logging.LogRetryScheduled(issueID, identifier, nextAttempt, delay.Milliseconds())
 }
 
 // scheduleContinuationRetry 安排续行重试
@@ -566,7 +607,10 @@ func (o *Orchestrator) onRetryTimer(issueID string) {
 	// 获取候选问题
 	issues, err := o.trackerClient.FetchCandidateIssues(ctx, o.cfg.Tracker.ActiveStates)
 	if err != nil {
-		fmt.Printf("retry poll failed for %s: %v\n", issueID, err)
+		logging.Error("retry poll failed",
+			"task_id", issueID,
+			"error", err.Error(),
+		)
 		o.scheduleRetry(issueID, retryEntry.Identifier, &retryEntry.Attempt, "retry_poll_failed")
 		return
 	}
@@ -585,7 +629,7 @@ func (o *Orchestrator) onRetryTimer(issueID string) {
 		o.mu.Lock()
 		delete(o.state.Claimed, issueID)
 		o.mu.Unlock()
-		fmt.Printf("issue %s no longer found, releasing claim\n", issueID)
+		logging.Warn("issue no longer found, releasing claim", "task_id", issueID)
 		return
 	}
 
@@ -668,5 +712,219 @@ func (o *Orchestrator) UpdateConfig(cfg *config.Config, promptTemplate string) {
 	o.state.PollIntervalMs = cfg.Polling.IntervalMs
 	o.state.MaxConcurrentAgents = cfg.Agent.MaxConcurrentAgents
 
-	fmt.Println("config updated")
+	logging.Info("config updated")
+}
+
+// Shutdown 优雅关闭编排器
+func (o *Orchestrator) Shutdown(ctx context.Context) error {
+	o.mu.Lock()
+	// 标记正在关闭，停止接受新任务
+	o.shuttingDown = true
+	o.mu.Unlock()
+
+	logging.Info("orchestrator shutting down")
+
+	// 创建关闭管理器
+	shutdownMgr := NewShutdownManager(o, o.trackerClient, o.cfg)
+
+	// 执行优雅关闭
+	return shutdownMgr.Shutdown(ctx)
+}
+
+// IsShuttingDown 检查是否正在关闭
+func (o *Orchestrator) IsShuttingDown() bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.shuttingDown
+}
+
+// GetTracker 获取跟踪器客户端（用于 API 查询）
+func (o *Orchestrator) GetTracker() tracker.Tracker {
+	return o.trackerClient
+}
+
+// CancelTask 取消运行中的任务
+// 返回值:
+//   - cancelled: 是否成功取消
+//   - notFound: 任务是否不存在
+//   - err: 错误信息
+func (o *Orchestrator) CancelTask(identifier string) (cancelled bool, notFound bool, err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	// 查找运行中的任务
+	var foundID string
+	var foundEntry *domain.RunningEntry
+	for id, entry := range o.state.Running {
+		if entry.Identifier == identifier {
+			foundID = id
+			foundEntry = entry
+			break
+		}
+	}
+
+	if foundEntry == nil {
+		// 检查是否在重试队列中
+		var foundRetry *domain.RetryEntry
+		for id, entry := range o.state.RetryAttempts {
+			if entry.Identifier == identifier {
+				foundRetry = entry
+				foundID = id
+				break
+			}
+		}
+
+		if foundRetry == nil {
+			return false, true, nil // 任务不存在
+		}
+
+		// 取消重试队列中的任务
+		delete(o.state.RetryAttempts, foundID)
+		delete(o.state.Claimed, foundID)
+
+		// 取消重试定时器
+		if timer, ok := o.retryTimers[foundID]; ok {
+			timer.Stop()
+			delete(o.retryTimers, foundID)
+		}
+
+		logging.Info("cancelled retry", "task_id", foundID, "identifier", identifier)
+		return true, false, nil
+	}
+
+	// 取消运行中的任务
+	// 1. 调用取消函数（终止 Agent 进程）
+	if cancelFn, ok := o.cancelContexts[foundID]; ok {
+		cancelFn()
+		delete(o.cancelContexts, foundID)
+	}
+
+	// 2. 更新 Tracker 状态为 "Cancelled"
+	if foundEntry.Issue != nil {
+		ctx := context.Background()
+		if err := o.trackerClient.UpdateStage(ctx, identifier, domain.StageState{
+			Name:   "cancelled",
+			Status: "completed",
+		}); err != nil {
+			logging.Error("failed to update tracker state",
+				"task_id", foundID,
+				"identifier", identifier,
+				"error", err.Error(),
+			)
+		}
+	}
+
+	// 3. 累加运行时间
+	o.endedRuntime += time.Since(foundEntry.StartedAt).Seconds()
+
+	// 4. 从运行中移除
+	delete(o.state.Running, foundID)
+	delete(o.state.Claimed, foundID)
+
+	// 5. 取消重试定时器（如果存在）
+	if timer, ok := o.retryTimers[foundID]; ok {
+		timer.Stop()
+		delete(o.retryTimers, foundID)
+	}
+
+	logging.Info("cancelled task", "task_id", foundID, "identifier", identifier)
+
+	// 6. 异步清理工作空间
+	go func() {
+		ctx := context.Background()
+		wsPath := o.workspaceMgr.GetWorkspacePath(identifier)
+		if err := o.workspaceMgr.RemoveWorkspace(ctx, wsPath); err != nil {
+			logging.LogWorkspaceError(foundID, identifier, err)
+		}
+	}()
+
+	// 7. 通知观察者
+	if o.onStateChange != nil {
+		o.onStateChange()
+	}
+
+	return true, false, nil
+}
+
+// GetRunningEntryByIdentifier 根据标识符获取运行中的任务条目
+func (o *Orchestrator) GetRunningEntryByIdentifier(identifier string) *domain.RunningEntry {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	for _, entry := range o.state.Running {
+		if entry.Identifier == identifier {
+			return entry
+		}
+	}
+	return nil
+}
+
+// GetRetryEntryByIdentifier 根据标识符获取重试队列中的任务条目
+func (o *Orchestrator) GetRetryEntryByIdentifier(identifier string) *domain.RetryEntry {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	for _, entry := range o.state.RetryAttempts {
+		if entry.Identifier == identifier {
+			return entry
+		}
+	}
+	return nil
+}
+
+// storeCancelContext 存储任务的取消函数
+func (o *Orchestrator) storeCancelContext(issueID string, cancelFn context.CancelFunc) {
+	o.mu.Lock()
+	o.cancelContexts[issueID] = cancelFn
+	o.mu.Unlock()
+}
+
+// runWorkerWithCancel 运行 worker，支持取消
+func (o *Orchestrator) runWorkerWithCancel(parentCtx context.Context, issue *domain.Issue, attempt *int) {
+	// 创建可取消的上下文
+	ctx, cancelFn := context.WithCancel(parentCtx)
+	o.storeCancelContext(issue.ID, cancelFn)
+
+	// 初始化任务工作流（如果不存在）
+	if o.workflowEngine.GetWorkflow(issue.ID) == nil {
+		o.workflowEngine.InitTask(issue.ID)
+	}
+
+	// 使用原有的 runWorker 逻辑
+	o.runWorker(ctx, issue, attempt)
+
+	// 清理取消函数
+	o.mu.Lock()
+	delete(o.cancelContexts, issue.ID)
+	o.mu.Unlock()
+}
+
+// GetWorkflowEngine 获取工作流引擎
+func (o *Orchestrator) GetWorkflowEngine() *workflow.Engine {
+	return o.workflowEngine
+}
+
+// AdvanceTaskStage 推进任务到下一阶段
+func (o *Orchestrator) AdvanceTaskStage(taskID string) (*workflow.TaskWorkflow, error) {
+	return o.workflowEngine.AdvanceStage(taskID)
+}
+
+// FailTaskStage 标记任务当前阶段为失败
+func (o *Orchestrator) FailTaskStage(taskID string, reason string) (*workflow.TaskWorkflow, error) {
+	return o.workflowEngine.FailStage(taskID, reason)
+}
+
+// GetTaskWorkflow 获取任务工作流状态
+func (o *Orchestrator) GetTaskWorkflow(taskID string) *workflow.TaskWorkflow {
+	return o.workflowEngine.GetWorkflow(taskID)
+}
+
+// InitTaskWorkflow 初始化任务工作流
+func (o *Orchestrator) InitTaskWorkflow(taskID string) (*workflow.TaskWorkflow, error) {
+	return o.workflowEngine.InitTask(taskID)
+}
+
+// GetTaskCurrentStage 获取任务当前阶段
+func (o *Orchestrator) GetTaskCurrentStage(taskID string) (*workflow.StageState, error) {
+	return o.workflowEngine.GetCurrentStage(taskID)
 }

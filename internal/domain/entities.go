@@ -143,6 +143,10 @@ type RunningEntry struct {
 	Issue *Issue `json:"issue"`
 	// Identifier 问题标识符
 	Identifier string `json:"identifier"`
+	// Title 任务标题
+	Title string `json:"title,omitempty"`
+	// Stage 当前阶段 (backlog, clarification, bdd_review, architecture_review, implementation, verification, completed, needs_attention, cancelled)
+	Stage string `json:"stage,omitempty"`
 	// Session 会话信息
 	Session *LiveSession `json:"session,omitempty"`
 	// RetryAttempt 重试尝试次数
@@ -163,6 +167,64 @@ type CodexTotals struct {
 	TotalTokens int64 `json:"total_tokens"`
 	// SecondsRunning 运行秒数
 	SecondsRunning float64 `json:"seconds_running"`
+}
+
+// StageState 阶段状态 (用于崩溃恢复)
+type StageState struct {
+	// Name 阶段名称 (clarification, bdd_review, etc.)
+	Name string `json:"name"`
+	// Status 状态 (pending, in_progress, completed, failed, waiting_review)
+	Status string `json:"status"`
+	// StartedAt 开始时间
+	StartedAt time.Time `json:"started_at"`
+	// UpdatedAt 更新时间
+	UpdatedAt time.Time `json:"updated_at"`
+	// Round 澄清轮次
+	Round int `json:"round"`
+	// Error 失败时的错误信息
+	Error string `json:"error,omitempty"`
+	// RetryCount 重试次数
+	RetryCount int `json:"retry_count,omitempty"`
+}
+
+// RecoveryAction 恢复动作类型
+type RecoveryAction string
+
+const (
+	// ActionContinue 继续执行当前阶段
+	ActionContinue RecoveryAction = "continue"
+	// ActionStart 开始执行该阶段
+	ActionStart RecoveryAction = "start"
+	// ActionWaitForReview 等待用户审核
+	ActionWaitForReview RecoveryAction = "wait_for_review"
+	// ActionRetry 重试该阶段
+	ActionRetry RecoveryAction = "retry"
+	// ActionUnknown 未知的恢复动作
+	ActionUnknown RecoveryAction = "unknown"
+	// ActionSkip 跳过该任务（已完成或不需要恢复）
+	ActionSkip RecoveryAction = "skip"
+)
+
+// RecoveredTask 恢复的任务信息
+type RecoveredTask struct {
+	// Issue 问题信息
+	Issue *Issue `json:"issue"`
+	// StageState 阶段状态
+	StageState *StageState `json:"stage_state,omitempty"`
+	// Action 恢复动作
+	Action RecoveryAction `json:"action"`
+	// Error 恢复过程中的错误
+	Error string `json:"error,omitempty"`
+}
+
+// ConversationTurn 对话回合
+type ConversationTurn struct {
+	// Role 角色 (user, assistant)
+	Role string `json:"role"`
+	// Content 内容
+	Content string `json:"content"`
+	// Timestamp 时间戳
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // OrchestratorState 编排器运行状态

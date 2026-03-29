@@ -609,3 +609,64 @@ func strPtr(s string) *string {
 func intPtr(i int) *int {
 	return &i
 }
+
+// TestCancelTask_NotFound 测试取消不存在的任务
+func TestCancelTask_NotFound(t *testing.T) {
+	cfg := createTestConfig()
+	orch := New(cfg, "test prompt")
+
+	cancelled, notFound, err := orch.CancelTask("NONEXISTENT-123")
+
+	if !notFound {
+		t.Error("expected notFound to be true for non-existent task")
+	}
+	if cancelled {
+		t.Error("expected cancelled to be false for non-existent task")
+	}
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
+// TestGetRunningEntryByIdentifier 测试获取运行中的任务
+func TestGetRunningEntryByIdentifier(t *testing.T) {
+	cfg := createTestConfig()
+	orch := New(cfg, "test prompt")
+
+	// 初始状态应该返回 nil
+	entry := orch.GetRunningEntryByIdentifier("TEST-1")
+	if entry != nil {
+		t.Error("expected nil for non-existent task")
+	}
+}
+
+// TestGetRetryEntryByIdentifier 测试获取重试队列中的任务
+func TestGetRetryEntryByIdentifier(t *testing.T) {
+	cfg := createTestConfig()
+	orch := New(cfg, "test prompt")
+
+	// 初始状态应该返回 nil
+	entry := orch.GetRetryEntryByIdentifier("TEST-1")
+	if entry != nil {
+		t.Error("expected nil for non-existent task")
+	}
+}
+
+// TestCancelTask_EmptyState 测试空状态下的取消操作
+func TestCancelTask_EmptyState(t *testing.T) {
+	cfg := createTestConfig()
+	orch := New(cfg, "test prompt")
+
+	// 在没有任何运行任务的情况下取消
+	cancelled, notFound, err := orch.CancelTask("TEST-1")
+
+	if !notFound {
+		t.Error("expected notFound to be true")
+	}
+	if cancelled {
+		t.Error("expected cancelled to be false")
+	}
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}

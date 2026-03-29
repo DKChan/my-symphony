@@ -1,0 +1,117 @@
+# generated: 2026-03-29T17:30:00
+# last_updated: 2026-03-29T17:30:00
+# project: my-symphony
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-03-29T17:30:00
+last_updated: 2026-03-29T17:30:00
+project: my-symphony
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: 项目初始化与服务启动 (FR1-8, FR31, FR50, FR55, NFR2, NFR4)
+  epic-1: done
+  1-1-cli-init-交互式初始化: done
+  1-2-配置验证与管理: done
+  1-3-beads-tracker-集成: done
+  1-4-cli-start-启动后台服务: done
+  epic-1-retrospective: done
+
+  # Epic 2: 任务创建与看板管理 (FR9-13, FR34-35)
+  epic-2: done
+  2-1-web-页面创建新需求: done
+  2-2-任务状态自动流转: done
+  2-3-任务看板展示: done
+  2-4-任务状态筛选: done
+  2-5-取消进行中的需求: done
+  epic-2-retrospective: done
+
+  # Epic 3: 需求澄清交互流程 (FR14-21)
+  epic-3: done
+  3-1-ai-agent-需求理解调用: done
+  3-2-web-页面查看-ai-提问: done
+  3-3-web-页面提交回答: done
+  3-4-澄清轮次限制与跳过: done
+  epic-3-retrospective: done
+
+  # Epic 4: BDD 规则生成与审核 (FR22, FR24-26, FR30)
+  epic-4: in-progress
+  4-1-bdd-规则自动生成: in-progress
+  4-2-web-页面查看-bdd-规则: in-progress
+  4-3-web-页面审核-bdd-规则: in-progress
+  4-4-审核通过规则作为约束条件: in-progress
+  epic-4-retrospective: optional
+
+  # Epic 5: 架构设计与 TDD 规则审核 (FR23, FR27-29)
+  epic-5: backlog
+  5-1-架构设计与-tdd-规则自动生成: backlog
+  5-2-web-页面查看架构设计: backlog
+  5-3-web-页面审核架构设计: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: AI Agent 执行与实时监控 (FR32-33, FR36-40, FR52-54)
+  epic-6: backlog
+  6-1-ai-agent-cli-执行调用: backlog
+  6-2-执行状态监控: backlog
+  6-3-web-页面查看进度摘要: backlog
+  6-4-web-页面查看执行日志: backlog
+  6-5-执行错误检测与重试: backlog
+  6-6-状态变化视觉反馈: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: 验收报告与任务完成 (FR41-44, FR56)
+  epic-7: backlog
+  7-1-验收报告生成: backlog
+  7-2-验收报告-web-页面展示: backlog
+  7-3-验收通过驳回状态流转: backlog
+  7-4-任务完成后-git-提交: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8: 异常处理与人工干预 (FR45-49)
+  epic-8: backlog
+  8-1-失败任务流转到待人工处理状态: backlog
+  8-2-失败详情展示与建议查看: backlog
+  8-3-手动修复后继续执行: backlog
+  8-4-需求重新澄清或放弃: backlog
+  epic-8-retrospective: optional
+
+  # Epic 9: 服务可靠性与崩溃恢复 (FR51, NFR1, NFR3, NFR5)
+  epic-9: done
+  9-1-结构化执行日志系统: done
+  9-2-无超时限制的长时间执行支持: done
+  9-3-服务崩溃后的任务状态恢复: done
+  9-4-需求澄清对话记录获取与传递: done
+  epic-9-retrospective: done

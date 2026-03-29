@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/dministrator/symphony/internal/common"
 	"github.com/gin-gonic/gin"
@@ -52,4 +53,29 @@ func (h *SSEHandler) Handle(c *gin.Context) {
 			c.Writer.(http.Flusher).Flush()
 		}
 	}
+}
+
+// BroadcastTaskUpdate 广播任务状态变更事件
+func (h *SSEHandler) BroadcastTaskUpdate(taskID, oldStage, newStage string, task common.KanbanTaskPayload) {
+	event := common.TaskUpdateEvent{
+		Type:      "task_update",
+		TaskID:    taskID,
+		OldStage:  oldStage,
+		NewStage:  newStage,
+		Task:      task,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+
+	evt := &common.SSEEvent{
+		Event: "task_update",
+		Data:  string(data),
+	}
+
+	// 直接广播到所有客户端
+	h.broadcaster.BroadcastTaskUpdate(evt)
 }

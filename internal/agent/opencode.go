@@ -115,6 +115,11 @@ type openCodeRunResult struct {
 }
 
 // runOnce 执行一次 opencode 调用
+// 超时配置逻辑：
+// - Agent.TurnTimeoutMs < 0: 明确无超时
+// - Agent.TurnTimeoutMs == 0: 使用 Codex.TurnTimeoutMs
+// - Agent.TurnTimeoutMs > 0: 使用 Agent.TurnTimeoutMs
+// 最终值 <= 0 表示无超时限制
 func (r *openCodeRunner) runOnce(
 	ctx context.Context,
 	workspacePath string,
@@ -122,15 +127,37 @@ func (r *openCodeRunner) runOnce(
 	sessionID string,
 	callback EventCallback,
 ) (*openCodeRunResult, error) {
-	turnTimeoutMs := r.cfg.Codex.TurnTimeoutMs
-	if r.cfg.Agent.TurnTimeoutMs > 0 {
+	// 获取超时配置
+	var turnTimeoutMs int64
+
+	// Agent.TurnTimeoutMs < 0 表示明确无超时
+	// Agent.TurnTimeoutMs == 0 表示使用 Codex 配置
+	// Agent.TurnTimeoutMs > 0 表示使用 Agent 配置
+	if r.cfg.Agent.TurnTimeoutMs < 0 {
+		// 明确无超时
+		turnTimeoutMs = -1
+	} else if r.cfg.Agent.TurnTimeoutMs > 0 {
+		// 使用 Agent 配置
 		turnTimeoutMs = r.cfg.Agent.TurnTimeoutMs
-	}
-	if turnTimeoutMs <= 0 {
-		turnTimeoutMs = 3600000
+	} else {
+		// Agent == 0, fallback 到 Codex
+		turnTimeoutMs = r.cfg.Codex.TurnTimeoutMs
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(turnTimeoutMs)*time.Millisecond)
+	// 无超时限制: TurnTimeoutMs <= 0 表示永久等待
+	noTimeout := turnTimeoutMs <= 0
+
+	var runCtx context.Context
+	var cancel context.CancelFunc
+
+	if noTimeout {
+		// 无超时限制，使用原始 context
+		runCtx = ctx
+		cancel = func() {} // 空取消函数，避免 nil
+	} else {
+		// 有超时限制
+		runCtx, cancel = context.WithTimeout(ctx, time.Duration(turnTimeoutMs)*time.Millisecond)
+	}
 	defer cancel()
 
 	// 构建 opencode 命令
@@ -149,7 +176,7 @@ func (r *openCodeRunner) runOnce(
 	if r.cfg.OpenCode != nil && len(r.cfg.OpenCode.ExtraArgs) > 0 {
 		args = append(args, r.cfg.OpenCode.ExtraArgs...)
 	}
-	cmd := exec.CommandContext(ctx, command, args...)
+	cmd := exec.CommandContext(runCtx, command, args...)
 	cmd.Dir = workspacePath
 
 	stdout, err := cmd.StdoutPipe()

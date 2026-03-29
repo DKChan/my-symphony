@@ -2,6 +2,7 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -621,4 +622,549 @@ func stringPtr(s string) *string {
 // 辅助函数：整数指针
 func intPtr(i int) *int {
 	return &i
+}
+
+// TestBuildPromptWithHistory 测试带对话历史的提示词构建
+func TestBuildPromptWithHistory(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name     string
+		issue    *domain.Issue
+		attempt  *int
+		history  []domain.ConversationTurn
+		template string
+		expected []string // 检查是否包含这些内容
+	}{
+		{
+			name: "带对话历史占位符",
+			issue: &domain.Issue{
+				ID:         "123",
+				Identifier: "TEST-1",
+				Title:      "开发登录功能",
+				State:      "Todo",
+			},
+			attempt: nil,
+			history: []domain.ConversationTurn{
+				{Role: "user", Content: "需要登录功能", Timestamp: now},
+				{Role: "assistant", Content: "使用什么登录方式？", Timestamp: now},
+				{Role: "user", Content: "邮箱登录", Timestamp: now},
+			},
+			template: "任务: {{ issue.title }}\n\n{{ conversation_history }}",
+			expected: []string{
+				"任务: 开发登录功能",
+				"## 需求澄清历史",
+				"**User:** 需要登录功能",
+				"**Assistant:** 使用什么登录方式？",
+				"**User:** 邮箱登录",
+			},
+		},
+		{
+			name: "无占位符自动追加",
+			issue: &domain.Issue{
+				ID:         "124",
+				Identifier: "TEST-2",
+				Title:      "实现支付",
+				State:      "In Progress",
+			},
+			attempt: intPtr(1),
+			history: []domain.ConversationTurn{
+				{Role: "user", Content: "支付方式选择", Timestamp: now},
+				{Role: "assistant", Content: "建议支付宝", Timestamp: now},
+			},
+			template: "任务 {{ issue.identifier }}: {{ issue.title }} (attempt {{ attempt }})",
+			expected: []string{
+				"任务 TEST-2: 实现支付",
+				"attempt 1",
+				"## 需求澄清历史",
+				"**User:** 支付方式选择",
+				"**Assistant:** 建议支付宝",
+			},
+		},
+		{
+			name: "空历史移除占位符",
+			issue: &domain.Issue{
+				ID:         "125",
+				Identifier: "TEST-3",
+				Title:      "简单任务",
+				State:      "Todo",
+			},
+			attempt:  nil,
+			history:  nil,
+			template: "任务: {{ issue.title }}\n{{ conversation_history }}\n开始执行",
+			expected: []string{
+				"任务: 简单任务",
+				"开始执行",
+			},
+		},
+		{
+			name: "空历史不添加对话部分",
+			issue: &domain.Issue{
+				ID:         "126",
+				Identifier: "TEST-4",
+				Title:      "无澄清任务",
+				State:      "Todo",
+			},
+			attempt:  nil,
+			history:  []domain.ConversationTurn{},
+			template: "任务: {{ issue.title }}",
+			expected: []string{
+				"任务: 无澄清任务",
+			},
+		},
+		{
+			name: "多轮对话按轮次分组",
+			issue: &domain.Issue{
+				ID:         "127",
+				Identifier: "TEST-5",
+				Title:      "复杂需求",
+				State:      "Todo",
+			},
+			attempt:  nil,
+			history: []domain.ConversationTurn{
+				{Role: "user", Content: "需求A", Timestamp: now},
+				{Role: "assistant", Content: "澄清A", Timestamp: now},
+				{Role: "user", Content: "需求B", Timestamp: now},
+				{Role: "assistant", Content: "澄清B", Timestamp: now},
+				{Role: "user", Content: "需求C", Timestamp: now},
+			},
+			template: "{{ conversation_history }}",
+			expected: []string{
+				"### Round 1",
+				"### Round 2",
+				"### Round 3",
+				"**User:** 需求A",
+				"**Assistant:** 澄清A",
+				"**User:** 需求B",
+				"**Assistant:** 澄清B",
+				"**User:** 需求C",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildPromptWithHistory(tt.issue, tt.attempt, tt.history, tt.template)
+
+			for _, expected := range tt.expected {
+				if !strings.Contains(result, expected) {
+					t.Errorf("buildPromptWithHistory() result missing expected content: %q\nResult:\n%s", expected, result)
+				}
+			}
+
+			// 空历史不应该包含对话历史部分
+			if len(tt.history) == 0 && strings.Contains(result, "## 需求澄清历史") {
+				t.Errorf("buildPromptWithHistory() should not include conversation history section for empty history")
+			}
+		})
+	}
+}
+
+// TestFormatConversationHistory 测试对话历史格式化
+func TestFormatConversationHistory(t *testing.T) {
+	now := time.Now()
+
+	t.Run("格式化单轮对话", func(t *testing.T) {
+		history := []domain.ConversationTurn{
+			{Role: "user", Content: "想要添加用户登录功能", Timestamp: now},
+			{Role: "assistant", Content: "请问登录方式是邮箱还是手机号？", Timestamp: now},
+			{Role: "user", Content: "邮箱", Timestamp: now},
+		}
+
+		result := formatConversationHistory(history)
+
+		if !strings.Contains(result, "## 需求澄清历史") {
+			t.Error("missing header")
+		}
+		if !strings.Contains(result, "### Round 1") {
+			t.Error("missing round 1 header")
+		}
+		if !strings.Contains(result, "**User:** 想要添加用户登录功能") {
+			t.Error("missing user message")
+		}
+		if !strings.Contains(result, "**Assistant:** 请问登录方式是邮箱还是手机号？") {
+			t.Error("missing assistant message")
+		}
+	})
+
+	t.Run("格式化多轮对话", func(t *testing.T) {
+		history := []domain.ConversationTurn{
+			{Role: "user", Content: "问题1", Timestamp: now},
+			{Role: "assistant", Content: "回答1", Timestamp: now},
+			{Role: "user", Content: "问题2", Timestamp: now},
+			{Role: "assistant", Content: "回答2", Timestamp: now},
+			{Role: "user", Content: "问题3", Timestamp: now},
+		}
+
+		result := formatConversationHistory(history)
+
+		if !strings.Contains(result, "### Round 1") {
+			t.Error("missing round 1")
+		}
+		if !strings.Contains(result, "### Round 2") {
+			t.Error("missing round 2")
+		}
+		if !strings.Contains(result, "### Round 3") {
+			t.Error("missing round 3")
+		}
+	})
+}
+
+// TestGroupConversationRounds 测试对话轮次分组
+func TestGroupConversationRounds(t *testing.T) {
+	now := time.Now()
+
+	t.Run("assistant-user切换增加轮次", func(t *testing.T) {
+		history := []domain.ConversationTurn{
+			{Role: "user", Content: "Q1", Timestamp: now},
+			{Role: "assistant", Content: "A1", Timestamp: now},
+			{Role: "user", Content: "Q2", Timestamp: now},
+			{Role: "assistant", Content: "A2", Timestamp: now},
+		}
+
+		rounds := groupConversationRounds(history)
+
+		if len(rounds) != 2 {
+			t.Errorf("expected 2 rounds, got %d", len(rounds))
+		}
+		if len(rounds[1]) != 2 {
+			t.Errorf("expected 2 turns in round 1, got %d", len(rounds[1]))
+		}
+		if len(rounds[2]) != 2 {
+			t.Errorf("expected 2 turns in round 2, got %d", len(rounds[2]))
+		}
+	})
+
+	t.Run("单轮对话", func(t *testing.T) {
+		history := []domain.ConversationTurn{
+			{Role: "user", Content: "Q", Timestamp: now},
+			{Role: "assistant", Content: "A", Timestamp: now},
+		}
+
+		rounds := groupConversationRounds(history)
+
+		if len(rounds) != 1 {
+			t.Errorf("expected 1 round, got %d", len(rounds))
+		}
+	})
+
+	t.Run("空历史", func(t *testing.T) {
+		rounds := groupConversationRounds(nil)
+
+		if len(rounds) != 0 {
+			t.Errorf("expected 0 rounds for nil history, got %d", len(rounds))
+		}
+	})
+}
+
+// TestGetRoleLabel 测试角色标签
+func TestGetRoleLabel(t *testing.T) {
+	if getRoleLabel("user") != "User" {
+		t.Error("user label incorrect")
+	}
+	if getRoleLabel("assistant") != "Assistant" {
+		t.Error("assistant label incorrect")
+	}
+	if getRoleLabel("other") != "other" {
+		t.Error("other role should remain unchanged")
+	}
+}
+
+// TestBuildPromptWithBDDConstraints 测试带 BDD 约束的提示词构建
+func TestBuildPromptWithBDDConstraints(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name           string
+		issue          *domain.Issue
+		attempt        *int
+		bddConstraints string
+		template       string
+		expectedContains []string
+		notExpected    []string
+	}{
+		{
+			name: "带 BDD 约束占位符",
+			issue: &domain.Issue{
+				ID:         "123",
+				Identifier: "TEST-1",
+				Title:      "开发登录功能",
+				State:      "Todo",
+			},
+			attempt: nil,
+			bddConstraints: "## BDD 验收标准\n\n### Scenario 1: 登录成功\n- Given: 用户在登录页\n- When: 点击登录\n- Then: 跳转首页",
+			template: "任务: {{ issue.title }}\n\n{{ bdd_constraints }}",
+			expectedContains: []string{
+				"任务: 开发登录功能",
+				"## BDD 验收标准",
+				"### Scenario 1: 登录成功",
+				"- Given: 用户在登录页",
+			},
+		},
+		{
+			name: "无占位符自动追加 BDD 约束",
+			issue: &domain.Issue{
+				ID:         "124",
+				Identifier: "TEST-2",
+				Title:      "实现支付",
+				State:      "In Progress",
+			},
+			attempt: intPtr(1),
+			bddConstraints: "## BDD 验收标准\n\n重要约束",
+			template: "任务 {{ issue.identifier }}: {{ issue.title }} (attempt {{ attempt }})",
+			expectedContains: []string{
+				"任务 TEST-2: 实现支付",
+				"attempt 1",
+				"## BDD 验收标准",
+				"重要约束",
+			},
+		},
+		{
+			name: "空 BDD 约束移除占位符",
+			issue: &domain.Issue{
+				ID:         "125",
+				Identifier: "TEST-3",
+				Title:      "简单任务",
+				State:      "Todo",
+			},
+			attempt:        nil,
+			bddConstraints: "",
+			template:       "任务: {{ issue.title }}\n{{ bdd_constraints }}\n开始执行",
+			expectedContains: []string{
+				"任务: 简单任务",
+				"开始执行",
+			},
+			notExpected: []string{
+				"{{ bdd_constraints }}",
+			},
+		},
+		{
+			name: "空 BDD 约束不添加额外内容",
+			issue: &domain.Issue{
+				ID:         "126",
+				Identifier: "TEST-4",
+				Title:      "无约束任务",
+				State:      "Todo",
+			},
+			attempt:        nil,
+			bddConstraints: "",
+			template:       "任务: {{ issue.title }}",
+			expectedContains: []string{
+				"任务: 无约束任务",
+			},
+			notExpected: []string{
+				"BDD",
+				"验收",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildPromptWithBDDConstraints(tt.issue, tt.attempt, tt.bddConstraints, tt.template)
+
+			for _, expected := range tt.expectedContains {
+				if !strings.Contains(result, expected) {
+					t.Errorf("result missing expected content: %q\nResult:\n%s", expected, result)
+				}
+			}
+
+			for _, notExpected := range tt.notExpected {
+				if strings.Contains(result, notExpected) {
+					t.Errorf("result contains unexpected content: %q\nResult:\n%s", notExpected, result)
+				}
+			}
+		})
+	}
+}
+
+// TestBuildPromptWithHistoryAndBDD 测试同时包含历史和BDD约束的提示词构建
+func TestBuildPromptWithHistoryAndBDD(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name           string
+		issue          *domain.Issue
+		attempt        *int
+		history        []domain.ConversationTurn
+		bddConstraints string
+		template       string
+		expectedContains []string
+	}{
+		{
+			name: "完整提示词包含历史和BDD",
+			issue: &domain.Issue{
+				ID:         "127",
+				Identifier: "TEST-5",
+				Title:      "复杂需求",
+				State:      "Todo",
+			},
+			attempt: intPtr(2),
+			history: []domain.ConversationTurn{
+				{Role: "user", Content: "需求A", Timestamp: now},
+				{Role: "assistant", Content: "澄清A", Timestamp: now},
+			},
+			bddConstraints: "## BDD 验收标准\n\n场景列表",
+			template: "任务 {{ issue.identifier }}: {{ issue.title }}\n\n{{ conversation_history }}\n\n{{ bdd_constraints }}",
+			expectedContains: []string{
+				"任务 TEST-5: 复杂需求",
+				"attempt 2",
+				"## 需求澄清历史",
+				"**User:** 需求A",
+				"## BDD 验收标准",
+				"场景列表",
+			},
+		},
+		{
+			name: "无历史无BDD约束",
+			issue: &domain.Issue{
+				ID:         "128",
+				Identifier: "TEST-6",
+				Title:      "简单任务",
+				State:      "Todo",
+			},
+			attempt:        nil,
+			history:        nil,
+			bddConstraints: "",
+			template:       "任务: {{ issue.title }}",
+			expectedContains: []string{
+				"任务: 简单任务",
+			},
+		},
+		{
+			name: "只有历史无BDD",
+			issue: &domain.Issue{
+				ID:         "129",
+				Identifier: "TEST-7",
+				Title:      "历史任务",
+				State:      "Todo",
+			},
+			attempt: nil,
+			history: []domain.ConversationTurn{
+				{Role: "user", Content: "问题", Timestamp: now},
+				{Role: "assistant", Content: "回答", Timestamp: now},
+			},
+			bddConstraints: "",
+			template:       "任务: {{ issue.title }}\n{{ conversation_history }}",
+			expectedContains: []string{
+				"任务: 历史任务",
+				"## 需求澄清历史",
+				"**User:** 问题",
+			},
+		},
+		{
+			name: "只有BDD无历史",
+			issue: &domain.Issue{
+				ID:         "130",
+				Identifier: "TEST-8",
+				Title:      "BDD任务",
+				State:      "Todo",
+			},
+			attempt:        nil,
+			history:        nil,
+			bddConstraints: "## BDD 验收标准",
+			template:       "任务: {{ issue.title }}\n{{ bdd_constraints }}",
+			expectedContains: []string{
+				"任务: BDD任务",
+				"## BDD 验收标准",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildPromptWithHistoryAndBDD(tt.issue, tt.attempt, tt.history, tt.bddConstraints, tt.template)
+
+			for _, expected := range tt.expectedContains {
+				if !strings.Contains(result, expected) {
+					t.Errorf("result missing expected content: %q\nResult:\n%s", expected, result)
+				}
+			}
+		})
+	}
+}
+
+// TestInjectBDDConstraints 测试注入 BDD 约束到已有 prompt
+func TestInjectBDDConstraints(t *testing.T) {
+	tests := []struct {
+		name           string
+		prompt         string
+		bddConstraints string
+		expectedContains []string
+		notExpected    []string
+	}{
+		{
+			name:   "有占位符注入",
+			prompt: "任务描述\n\n{{ bdd_constraints }}\n\n执行指令",
+			bddConstraints: "## BDD 验收标准\n\n场景1",
+			expectedContains: []string{
+				"任务描述",
+				"## BDD 验收标准",
+				"场景1",
+				"执行指令",
+			},
+			notExpected: []string{
+				"{{ bdd_constraints }}",
+			},
+		},
+		{
+			name:   "无占位符追加",
+			prompt: "任务描述\n执行指令",
+			bddConstraints: "## BDD 验收标准\n\n场景列表",
+			expectedContains: []string{
+				"任务描述",
+				"执行指令",
+				"---",
+				"## BDD 验收标准",
+				"场景列表",
+			},
+		},
+		{
+			name:           "空约束不修改",
+			prompt:         "任务描述",
+			bddConstraints: "",
+			expectedContains: []string{
+				"任务描述",
+			},
+			notExpected: []string{
+				"---",
+				"BDD",
+			},
+		},
+		{
+			name:           "空 prompt 使用约束",
+			prompt:         "",
+			bddConstraints: "## BDD 验收标准",
+			expectedContains: []string{
+				"## BDD 验收标准",
+			},
+		},
+		{
+			name:   "约束包含分隔符",
+			prompt: "任务描述",
+			bddConstraints: "---\n## BDD 验收标准",
+			expectedContains: []string{
+				"任务描述",
+				"## BDD 验收标准",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := InjectBDDConstraints(tt.prompt, tt.bddConstraints)
+
+			for _, expected := range tt.expectedContains {
+				if !strings.Contains(result, expected) {
+					t.Errorf("result missing expected content: %q\nResult:\n%s", expected, result)
+				}
+			}
+
+			for _, notExpected := range tt.notExpected {
+				if strings.Contains(result, notExpected) {
+					t.Errorf("result contains unexpected content: %q\nResult:\n%s", notExpected, result)
+				}
+			}
+		})
+	}
 }

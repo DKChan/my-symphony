@@ -801,3 +801,262 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// TestSSEBroadcasterBroadcastTaskUpdate 测试广播任务更新事件
+func TestSSEBroadcasterBroadcastTaskUpdate(t *testing.T) {
+	broadcaster := NewSSEBroadcaster()
+
+	// 订阅客户端
+	client1 := broadcaster.Subscribe()
+	client2 := broadcaster.Subscribe()
+
+	// 创建任务更新事件
+	evt := &SSEEvent{
+		Event: "task_update",
+		Data:  `{"type":"task_update","task_id":"TEST-1","old_stage":"backlog","new_stage":"implementation"}`,
+	}
+
+	// 广播任务更新事件
+	broadcaster.BroadcastTaskUpdate(evt)
+
+	// 验证所有客户端都收到事件
+	timeout := time.After(100 * time.Millisecond)
+	received := 0
+
+	for i := 0; i < 2; i++ {
+		select {
+		case event := <-client1:
+			if event.Event != "task_update" {
+				t.Errorf("expected event type 'task_update', got %s", event.Event)
+			}
+			received++
+		case event := <-client2:
+			if event.Event != "task_update" {
+				t.Errorf("expected event type 'task_update', got %s", event.Event)
+			}
+			received++
+		case <-timeout:
+			t.Error("expected to receive event within timeout")
+		}
+	}
+
+	if received != 2 {
+		t.Errorf("expected to receive 2 events, got %d", received)
+	}
+
+	// 清理
+	broadcaster.Unsubscribe(client1)
+	broadcaster.Unsubscribe(client2)
+}
+
+// TestKanbanStages 测试看板阶段配置
+func TestKanbanStages(t *testing.T) {
+	// 验证阶段数量
+	if len(KanbanStages) != 9 {
+		t.Errorf("expected 9 stages, got %d", len(KanbanStages))
+	}
+
+	// 验证阶段顺序
+	expectedOrder := []string{
+		"backlog",
+		"clarification",
+		"bdd_review",
+		"architecture_review",
+		"implementation",
+		"verification",
+		"completed",
+		"needs_attention",
+		"cancelled",
+	}
+
+	for i, stage := range KanbanStages {
+		if stage.ID != expectedOrder[i] {
+			t.Errorf("expected stage %d to be %s, got %s", i, expectedOrder[i], stage.ID)
+		}
+		if stage.Title == "" {
+			t.Errorf("expected non-empty title for stage %s", stage.ID)
+		}
+		if stage.Color == "" {
+			t.Errorf("expected non-empty color for stage %s", stage.ID)
+		}
+	}
+}
+
+// TestGetKanbanStageConfig 测试获取看板阶段配置
+func TestGetKanbanStageConfig(t *testing.T) {
+	tests := []struct {
+		name          string
+		stageID       string
+		expectedTitle string
+		expectedColor string
+	}{
+		{
+			name:          "backlog",
+			stageID:       "backlog",
+			expectedTitle: "待开始",
+			expectedColor: "#6b7280",
+		},
+		{
+			name:          "implementation",
+			stageID:       "implementation",
+			expectedTitle: "实现中",
+			expectedColor: "#22d3ee",
+		},
+		{
+			name:          "completed",
+			stageID:       "completed",
+			expectedTitle: "完成",
+			expectedColor: "#4ade80",
+		},
+		{
+			name:          "needs_attention",
+			stageID:       "needs_attention",
+			expectedTitle: "待人工处理",
+			expectedColor: "#f87171",
+		},
+		{
+			name:          "unknown stage - defaults to backlog",
+			stageID:       "unknown_stage",
+			expectedTitle: "待开始",
+			expectedColor: "#6b7280",
+		},
+		{
+			name:          "empty stage - defaults to backlog",
+			stageID:       "",
+			expectedTitle: "待开始",
+			expectedColor: "#6b7280",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := GetKanbanStageConfig(tt.stageID)
+			if config.Title != tt.expectedTitle {
+				t.Errorf("expected title %s, got %s", tt.expectedTitle, config.Title)
+			}
+			if config.Color != tt.expectedColor {
+				t.Errorf("expected color %s, got %s", tt.expectedColor, config.Color)
+			}
+		})
+	}
+}
+
+// TestTaskUpdateEvent 测试任务更新事件结构
+func TestTaskUpdateEvent(t *testing.T) {
+	event := TaskUpdateEvent{
+		Type:      "task_update",
+		TaskID:    "TEST-1",
+		OldStage:  "backlog",
+		NewStage:  "implementation",
+		Timestamp: "2024-01-01T00:00:00Z",
+		Task: KanbanTaskPayload{
+			IssueIdentifier: "TEST-1",
+			Title:           "Test Task",
+			Stage:           "implementation",
+			State:           "In Progress",
+		},
+	}
+
+	if event.Type != "task_update" {
+		t.Errorf("expected type 'task_update', got %s", event.Type)
+	}
+	if event.TaskID != "TEST-1" {
+		t.Errorf("expected task_id 'TEST-1', got %s", event.TaskID)
+	}
+	if event.OldStage != "backlog" {
+		t.Errorf("expected old_stage 'backlog', got %s", event.OldStage)
+	}
+	if event.NewStage != "implementation" {
+		t.Errorf("expected new_stage 'implementation', got %s", event.NewStage)
+	}
+}
+
+// TestKanbanColumn 测试看板列结构
+func TestKanbanColumn(t *testing.T) {
+	column := KanbanColumn{
+		ID:        "implementation",
+		Title:     "实现中",
+		Icon:      "<svg>...</svg>",
+		Color:     "#22d3ee",
+		TaskCount: 5,
+		Tasks: []KanbanTaskPayload{
+			{
+				IssueIdentifier: "TEST-1",
+				Title:           "Task 1",
+				Stage:           "implementation",
+			},
+		},
+	}
+
+	if column.ID != "implementation" {
+		t.Errorf("expected ID 'implementation', got %s", column.ID)
+	}
+	if column.TaskCount != 5 {
+		t.Errorf("expected TaskCount 5, got %d", column.TaskCount)
+	}
+	if len(column.Tasks) != 1 {
+		t.Errorf("expected 1 task, got %d", len(column.Tasks))
+	}
+}
+
+// TestKanbanPayload 测试看板载荷结构
+func TestKanbanPayload(t *testing.T) {
+	payload := KanbanPayload{
+		GeneratedAt: "2024-01-01T00:00:00Z",
+		TotalTasks:  10,
+		Columns: []KanbanColumn{
+			{
+				ID:        "backlog",
+				Title:     "待开始",
+				TaskCount: 3,
+			},
+			{
+				ID:        "implementation",
+				Title:     "实现中",
+				TaskCount: 7,
+			},
+		},
+	}
+
+	if payload.GeneratedAt != "2024-01-01T00:00:00Z" {
+		t.Errorf("expected GeneratedAt '2024-01-01T00:00:00Z', got %s", payload.GeneratedAt)
+	}
+	if payload.TotalTasks != 10 {
+		t.Errorf("expected TotalTasks 10, got %d", payload.TotalTasks)
+	}
+	if len(payload.Columns) != 2 {
+		t.Errorf("expected 2 columns, got %d", len(payload.Columns))
+	}
+}
+
+// TestKanbanTaskPayload 测试看板任务载荷结构
+func TestKanbanTaskPayload(t *testing.T) {
+	task := KanbanTaskPayload{
+		IssueID:         "issue-1",
+		IssueIdentifier: "TEST-1",
+		Title:           "Implement Feature",
+		State:           "In Progress",
+		Stage:           "implementation",
+		SessionID:       "sess-abc123",
+		TurnCount:       10,
+		RuntimeTurns:    "5m 30s / 10",
+		Tokens: Tokens{
+			InputTokens:  1000,
+			OutputTokens: 500,
+			TotalTokens:  1500,
+		},
+		Attempt: 2,
+		Error:   "Connection timeout",
+		DueAt:   "2024-01-01T00:05:00Z",
+	}
+
+	if task.IssueIdentifier != "TEST-1" {
+		t.Errorf("expected IssueIdentifier 'TEST-1', got %s", task.IssueIdentifier)
+	}
+	if task.Stage != "implementation" {
+		t.Errorf("expected Stage 'implementation', got %s", task.Stage)
+	}
+	if task.Tokens.TotalTokens != 1500 {
+		t.Errorf("expected TotalTokens 1500, got %d", task.Tokens.TotalTokens)
+	}
+}

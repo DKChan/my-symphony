@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -12,15 +13,18 @@ import (
 
 // Config 服务配置（类型化视图）
 type Config struct {
-	Tracker   TrackerConfig   `json:"tracker"`
-	Polling   PollingConfig   `json:"polling"`
-	Workspace WorkspaceConfig `json:"workspace"`
-	Hooks     HooksConfig     `json:"hooks"`
-	Agent     AgentConfig     `json:"agent"`
-	Claude    *ClaudeConfig   `json:"claude,omitempty"`
-	OpenCode  *OpenCodeConfig `json:"opencode,omitempty"`
-	Codex     CodexConfig     `json:"codex"`
-	Server    *ServerConfig   `json:"server,omitempty"`
+	Tracker       TrackerConfig       `json:"tracker"`
+	Polling       PollingConfig       `json:"polling"`
+	Workspace     WorkspaceConfig     `json:"workspace"`
+	Hooks         HooksConfig         `json:"hooks"`
+	Agent         AgentConfig         `json:"agent"`
+	Claude        *ClaudeConfig       `json:"claude,omitempty"`
+	OpenCode      *OpenCodeConfig     `json:"opencode,omitempty"`
+	Codex         CodexConfig         `json:"codex"`
+	Server        *ServerConfig       `json:"server,omitempty"`
+	Clarification ClarificationConfig `json:"clarification"`
+	Execution     ExecutionConfig     `json:"execution"`
+	Logging       LoggingConfig       `json:"logging"`
 }
 
 // TrackerConfig 跟踪器配置
@@ -142,6 +146,30 @@ type ServerConfig struct {
 	Port int `json:"port"`
 }
 
+// ClarificationConfig 澄清配置
+type ClarificationConfig struct {
+	// MaxRounds 最大澄清轮次
+	MaxRounds int `json:"max_rounds"`
+}
+
+// ExecutionConfig 执行配置
+type ExecutionConfig struct {
+	// MaxRetries 最大重试次数
+	MaxRetries int `json:"max_retries"`
+}
+
+// LoggingConfig 日志配置
+type LoggingConfig struct {
+	// Level 日志级别: debug, info, warn, error
+	Level string `json:"level"`
+	// Format 输出格式: json, text
+	Format string `json:"format"`
+	// FilePath 输出文件路径（可选）
+	FilePath string `json:"file_path,omitempty"`
+	// EnableStdout 是否输出到标准输出
+	EnableStdout bool `json:"enable_stdout"`
+}
+
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -172,6 +200,17 @@ func DefaultConfig() *Config {
 			TurnTimeoutMs:  3600000,
 			ReadTimeoutMs:  5000,
 			StallTimeoutMs: 300000,
+		},
+		Clarification: ClarificationConfig{
+			MaxRounds: 5,
+		},
+		Execution: ExecutionConfig{
+			MaxRetries: 3,
+		},
+		Logging: LoggingConfig{
+			Level:        "info",
+			Format:       "json",
+			EnableStdout: true,
 		},
 	}
 }
@@ -285,9 +324,10 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 		if maxRetryBackoff, ok := parseInt(agent["max_retry_backoff_ms"]); ok && maxRetryBackoff > 0 {
 			cfg.Agent.MaxRetryBackoffMs = maxRetryBackoff
 		}
-		if turnTimeout, ok := parseInt(agent["turn_timeout_ms"]); ok && turnTimeout > 0 {
-			cfg.Agent.TurnTimeoutMs = turnTimeout
-		}
+		if turnTimeout, ok := parseInt(agent["turn_timeout_ms"]); ok {
+				// 0 或负数表示无超时限制，允许设置任何值
+				cfg.Agent.TurnTimeoutMs = turnTimeout
+			}
 		if byState, ok := agent["max_concurrent_agents_by_state"].(map[string]interface{}); ok {
 			for state, val := range byState {
 				if limit, ok := parseInt(val); ok && limit > 0 {
@@ -339,9 +379,10 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 		if turnSandboxPolicy, ok := codex["turn_sandbox_policy"].(string); ok {
 			cfg.Codex.TurnSandboxPolicy = turnSandboxPolicy
 		}
-		if turnTimeout, ok := parseInt(codex["turn_timeout_ms"]); ok && turnTimeout > 0 {
-			cfg.Codex.TurnTimeoutMs = turnTimeout
-		}
+		if turnTimeout, ok := parseInt(codex["turn_timeout_ms"]); ok {
+				// 0 或负数表示无超时限制，允许设置任何值
+				cfg.Codex.TurnTimeoutMs = turnTimeout
+			}
 		if readTimeout, ok := parseInt(codex["read_timeout_ms"]); ok && readTimeout > 0 {
 			cfg.Codex.ReadTimeoutMs = readTimeout
 		}
@@ -354,6 +395,36 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 	if server, ok := raw["server"].(map[string]interface{}); ok {
 		if port, ok := parseInt(server["port"]); ok {
 			cfg.Server = &ServerConfig{Port: int(port)}
+		}
+	}
+
+	// 解析 clarification 配置
+	if clarification, ok := raw["clarification"].(map[string]interface{}); ok {
+		if maxRounds, ok := parseInt(clarification["max_rounds"]); ok && maxRounds > 0 {
+			cfg.Clarification.MaxRounds = int(maxRounds)
+		}
+	}
+
+	// 解析 execution 配置
+	if execution, ok := raw["execution"].(map[string]interface{}); ok {
+		if maxRetries, ok := parseInt(execution["max_retries"]); ok && maxRetries >= 0 {
+			cfg.Execution.MaxRetries = int(maxRetries)
+		}
+	}
+
+	// 解析 logging 配置
+	if logging, ok := raw["logging"].(map[string]interface{}); ok {
+		if level, ok := logging["level"].(string); ok {
+			cfg.Logging.Level = level
+		}
+		if format, ok := logging["format"].(string); ok {
+			cfg.Logging.Format = format
+		}
+		if filePath, ok := logging["file_path"].(string); ok {
+			cfg.Logging.FilePath = filePath
+		}
+		if enableStdout, ok := logging["enable_stdout"].(bool); ok {
+			cfg.Logging.EnableStdout = enableStdout
 		}
 	}
 
@@ -432,15 +503,15 @@ func (c *Config) ValidateDispatchConfig() *Validation {
 	var errors []string
 
 	// 验证 tracker.kind
-	supportedTrackers := map[string]bool{"linear": true, "github": true, "mock": true}
+	supportedTrackers := map[string]bool{"linear": true, "github": true, "mock": true, "beads": true}
 	if c.Tracker.Kind == "" {
 		errors = append(errors, "tracker.kind is required")
 	} else if !supportedTrackers[c.Tracker.Kind] {
-		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: linear, github, mock)", c.Tracker.Kind))
+		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: linear, github, mock, beads)", c.Tracker.Kind))
 	}
 
-	// mock 类型不需要 api_key，跳过验证
-	if c.Tracker.Kind == "mock" {
+	// mock 和 beads 类型不需要 api_key，跳过验证
+	if c.Tracker.Kind == "mock" || c.Tracker.Kind == "beads" {
 		return &Validation{
 			Valid:  len(errors) == 0,
 			Errors: errors,
@@ -517,4 +588,106 @@ var workspaceKeyRe = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
 func SanitizeWorkspaceKey(identifier string) string {
 	return workspaceKeyRe.ReplaceAllString(identifier, "_")
+}
+
+// ValidateSymphonyConfig 验证 Symphony 特定配置
+// 验证 tracker 配置、AI Agent CLI 路径、prompt 文件等
+func (c *Config) ValidateSymphonyConfig() *Validation {
+	var errors []string
+
+	// 验证 tracker 配置有效性
+	supportedTrackers := map[string]bool{"linear": true, "github": true, "mock": true, "beads": true}
+	if c.Tracker.Kind == "" {
+		errors = append(errors, "tracker.kind is required")
+	} else if !supportedTrackers[c.Tracker.Kind] {
+		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: linear, github, mock, beads)", c.Tracker.Kind))
+	}
+
+	// 验证 tracker API 配置
+	// mock 和 beads 类型不需要 API 配置
+	if c.Tracker.Kind != "mock" && c.Tracker.Kind != "beads" {
+		if c.Tracker.APIKey == "" {
+			switch c.Tracker.Kind {
+			case "linear":
+				errors = append(errors, "tracker.api_key is required for linear tracker")
+			case "github":
+				errors = append(errors, "tracker.api_key is required for github tracker")
+			}
+		}
+	}
+
+	// 验证 Linear 特定配置
+	if c.Tracker.Kind == "linear" && c.Tracker.ProjectSlug == "" {
+		errors = append(errors, "tracker.project_slug is required for linear tracker")
+	}
+
+	// 验证 GitHub 特定配置
+	if c.Tracker.Kind == "github" && c.Tracker.Repo == "" {
+		errors = append(errors, "tracker.repo is required for github tracker (format: owner/repo)")
+	}
+
+	// 验证 agent 配置
+	supportedAgents := map[string]bool{"codex": true, "claude": true, "opencode": true}
+	agentKind := c.Agent.Kind
+	if agentKind == "" {
+		agentKind = "codex"
+	}
+	if !supportedAgents[agentKind] {
+		errors = append(errors, fmt.Sprintf("unsupported agent.kind: %s (supported: codex, claude, opencode)", agentKind))
+	}
+
+	// 验证 agent CLI 命令是否存在
+	var agentCmd string
+	switch agentKind {
+	case "codex":
+		agentCmd = c.Codex.Command
+		if agentCmd == "" {
+			agentCmd = "codex"
+		}
+	case "claude":
+		if c.Claude != nil && c.Claude.Command != "" {
+			agentCmd = c.Claude.Command
+		} else {
+			agentCmd = "claude"
+		}
+	case "opencode":
+		if c.OpenCode != nil && c.OpenCode.Command != "" {
+			agentCmd = c.OpenCode.Command
+		} else {
+			agentCmd = "opencode"
+		}
+	}
+
+	// 检查 agent CLI 是否在 PATH 中
+	if _, err := exec.LookPath(agentCmd); err != nil {
+		// 对于带参数的命令，只取第一个部分
+		cmdParts := strings.Fields(agentCmd)
+		if len(cmdParts) > 0 {
+			if _, err := exec.LookPath(cmdParts[0]); err != nil {
+				errors = append(errors, fmt.Sprintf("agent CLI not found: %s", agentCmd))
+			}
+		} else {
+			errors = append(errors, fmt.Sprintf("agent CLI not found: %s", agentCmd))
+		}
+	}
+
+	// 验证工作空间根目录
+	if c.Workspace.Root == "" {
+		errors = append(errors, "workspace.root is required")
+	}
+
+	// 验证 clarification.max_rounds
+	if c.Clarification.MaxRounds <= 0 {
+		errors = append(errors, "clarification.max_rounds must be positive")
+	}
+
+	// 验证 execution.max_retries
+	if c.Execution.MaxRetries < 0 {
+		errors = append(errors, "execution.max_retries must be non-negative")
+	}
+
+	return &Validation{
+		Valid:  len(errors) == 0,
+		Errors: errors,
+	}
 }

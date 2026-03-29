@@ -2,7 +2,10 @@
 package server
 
 import (
+	"context"
+	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/dministrator/symphony/internal/router"
 	"github.com/dministrator/symphony/internal/common"
@@ -16,6 +19,7 @@ type Server struct {
 	orchestrator *orchestrator.Orchestrator
 	port         int
 	engine       *gin.Engine
+	httpServer   *http.Server // 用于优雅关闭
 
 	// SSE 广播器
 	broadcaster *common.SSEBroadcaster
@@ -51,7 +55,24 @@ func (s *Server) onStateChange() {
 
 // Run 运行服务器
 func (s *Server) Run() error {
-	return s.engine.Run(":" + strconv.Itoa(s.port))
+	s.httpServer = &http.Server{
+		Addr:    ":" + strconv.Itoa(s.port),
+		Handler: s.engine,
+	}
+	return s.httpServer.ListenAndServe()
+}
+
+// Shutdown 优雅关闭服务器
+func (s *Server) Shutdown(ctx context.Context) error {
+	if s.httpServer == nil {
+		return nil
+	}
+
+	// 设置 5 秒超时
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	return s.httpServer.Shutdown(timeoutCtx)
 }
 
 // Port 返回服务器端口

@@ -15,6 +15,7 @@ import (
 
 	"github.com/dministrator/symphony/internal/config"
 	"github.com/dministrator/symphony/internal/domain"
+	"github.com/dministrator/symphony/internal/logging"
 )
 
 // codexRunner 使用 Codex app-server JSON-RPC 协议的运行器
@@ -112,8 +113,25 @@ func (r *codexRunner) RunAttempt(
 ) (*RunAttemptResult, error) {
 	prompt := buildPrompt(issue, attempt, promptTemplate)
 
+	var attemptNum int
+	if attempt != nil {
+		attemptNum = *attempt
+	}
+
+	logging.Debug("starting codex run attempt",
+		"task_id", issue.ID,
+		"identifier", issue.Identifier,
+		"attempt", attemptNum,
+		"workspace_path", workspacePath,
+	)
+
 	session, err := r.startSession(ctx, workspacePath)
 	if err != nil {
+		logging.Error("failed to start codex session",
+			"task_id", issue.ID,
+			"identifier", issue.Identifier,
+			"error", err.Error(),
+		)
 		return nil, fmt.Errorf("failed to start codex session: %w", err)
 	}
 	defer session.stop()
@@ -126,6 +144,13 @@ func (r *codexRunner) RunAttempt(
 		})
 	}
 
+	logging.Info("codex session started",
+		"task_id", issue.ID,
+		"identifier", issue.Identifier,
+		"session_id", session.sessionID(),
+		"thread_id", session.ThreadID,
+	)
+
 	turnCount := 0
 	tokenUsage := &TokenUsage{}
 
@@ -137,6 +162,12 @@ func (r *codexRunner) RunAttempt(
 
 		turnResult, err := r.runTurn(ctx, session, turnPrompt, issue, callback)
 		if err != nil {
+			logging.Error("turn failed with error",
+				"task_id", issue.ID,
+				"identifier", issue.Identifier,
+				"turn_num", turnNum,
+				"error", err.Error(),
+			)
 			return &RunAttemptResult{
 				Success:   false,
 				Error:     err,
@@ -150,6 +181,12 @@ func (r *codexRunner) RunAttempt(
 		tokenUsage.TotalTokens += turnResult.totalTokens
 
 		if !turnResult.success {
+			logging.Warn("turn failed",
+				"task_id", issue.ID,
+				"identifier", issue.Identifier,
+				"turn_num", turnNum,
+				"error_message", turnResult.errMsg,
+			)
 			return &RunAttemptResult{
 				Success:    false,
 				Error:      fmt.Errorf("turn failed: %s", turnResult.errMsg),
@@ -159,9 +196,23 @@ func (r *codexRunner) RunAttempt(
 		}
 
 		if !turnResult.shouldContinue {
+			logging.Info("turn completed, no more work needed",
+				"task_id", issue.ID,
+				"identifier", issue.Identifier,
+				"turn_num", turnNum,
+			)
 			break
 		}
 	}
+
+	logging.Info("codex run attempt completed",
+		"task_id", issue.ID,
+		"identifier", issue.Identifier,
+		"turn_count", turnCount,
+		"input_tokens", tokenUsage.InputTokens,
+		"output_tokens", tokenUsage.OutputTokens,
+		"total_tokens", tokenUsage.TotalTokens,
+	)
 
 	return &RunAttemptResult{
 		Success:    true,
@@ -280,6 +331,7 @@ type codexTurnResult struct {
 }
 
 // runTurn 执行一次 turn
+// 如果 TurnTimeoutMs <= 0，则无超时限制，允许无限等待
 func (r *codexRunner) runTurn(
 	ctx context.Context,
 	session *codexSession,
@@ -287,8 +339,22 @@ func (r *codexRunner) runTurn(
 	issue *domain.Issue,
 	callback EventCallback,
 ) (*codexTurnResult, error) {
-	timeout := time.Duration(r.cfg.Codex.TurnTimeoutMs) * time.Millisecond
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	turnTimeoutMs := r.cfg.Codex.TurnTimeoutMs
+
+	// 无超时限制: TurnTimeoutMs <= 0 表示永久等待
+	noTimeout := turnTimeoutMs <= 0
+
+	var turnCtx context.Context
+	var cancel context.CancelFunc
+
+	if noTimeout {
+		// 无超时限制，使用原始 context
+		turnCtx = ctx
+		cancel = func() {} // 空取消函数，避免 nil
+	} else {
+		// 有超时限制
+		turnCtx, cancel = context.WithTimeout(ctx, time.Duration(turnTimeoutMs)*time.Millisecond)
+	}
 	defer cancel()
 
 	turnParams := map[string]any{
@@ -357,7 +423,12 @@ func (r *codexRunner) runTurn(
 		if err := scanner.Err(); err != nil {
 			return nil, fmt.Errorf("scanner: %w", err)
 		}
-	case <-ctx.Done():
+	case <-turnCtx.Done():
+		// 区分超时和外部取消
+		if noTimeout {
+			// 无超时配置时，只可能是外部取消（如服务关闭）
+			return nil, fmt.Errorf("context_cancelled: %v", turnCtx.Err())
+		}
 		return nil, fmt.Errorf("turn_timeout")
 	}
 

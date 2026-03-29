@@ -22,6 +22,15 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Agent.MaxConcurrentAgents != 10 {
 		t.Errorf("expected max concurrent agents 10, got %d", cfg.Agent.MaxConcurrentAgents)
 	}
+
+	// 测试新配置字段的默认值
+	if cfg.Clarification.MaxRounds != 5 {
+		t.Errorf("expected clarification.max_rounds 5, got %d", cfg.Clarification.MaxRounds)
+	}
+
+	if cfg.Execution.MaxRetries != 3 {
+		t.Errorf("expected execution.max_retries 3, got %d", cfg.Execution.MaxRetries)
+	}
 }
 
 func TestParseConfig(t *testing.T) {
@@ -205,6 +214,180 @@ func TestSanitizeWorkspaceKey(t *testing.T) {
 			result := config.SanitizeWorkspaceKey(tt.input)
 			if result != tt.expected {
 				t.Errorf("expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestParseConfigClarificationAndExecution(t *testing.T) {
+	raw := map[string]any{
+		"tracker": map[string]any{
+			"kind": "mock",
+		},
+		"clarification": map[string]any{
+			"max_rounds": 10,
+		},
+		"execution": map[string]any{
+			"max_retries": 5,
+		},
+	}
+
+	cfg, err := config.ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("failed to parse config: %v", err)
+	}
+
+	if cfg.Clarification.MaxRounds != 10 {
+		t.Errorf("expected clarification.max_rounds 10, got %d", cfg.Clarification.MaxRounds)
+	}
+
+	if cfg.Execution.MaxRetries != 5 {
+		t.Errorf("expected execution.max_retries 5, got %d", cfg.Execution.MaxRetries)
+	}
+}
+
+func TestValidateSymphonyConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *config.Config
+		wantValid bool
+	}{
+		{
+			name: "valid mock tracker config",
+			config: &config.Config{
+				Tracker: config.TrackerConfig{
+					Kind: "mock",
+				},
+				Agent: config.AgentConfig{
+					Kind: "codex",
+				},
+				Codex: config.CodexConfig{
+					Command: "echo", // Use echo command which is always available
+				},
+				Workspace: config.WorkspaceConfig{
+					Root: "/tmp/workspaces",
+				},
+				Clarification: config.ClarificationConfig{
+					MaxRounds: 5,
+				},
+				Execution: config.ExecutionConfig{
+					MaxRetries: 3,
+				},
+			},
+			wantValid: true,
+		},
+		{
+			name: "invalid tracker kind",
+			config: &config.Config{
+				Tracker: config.TrackerConfig{
+					Kind: "invalid_tracker",
+				},
+				Agent: config.AgentConfig{
+					Kind: "codex",
+				},
+				Workspace: config.WorkspaceConfig{
+					Root: "/tmp/workspaces",
+				},
+				Clarification: config.ClarificationConfig{
+					MaxRounds: 5,
+				},
+				Execution: config.ExecutionConfig{
+					MaxRetries: 3,
+				},
+			},
+			wantValid: false,
+		},
+		{
+			name: "missing workspace root",
+			config: &config.Config{
+				Tracker: config.TrackerConfig{
+					Kind: "mock",
+				},
+				Agent: config.AgentConfig{
+					Kind: "codex",
+				},
+				Workspace: config.WorkspaceConfig{
+					Root: "",
+				},
+				Clarification: config.ClarificationConfig{
+					MaxRounds: 5,
+				},
+				Execution: config.ExecutionConfig{
+					MaxRetries: 3,
+				},
+			},
+			wantValid: false,
+		},
+		{
+			name: "invalid clarification max_rounds",
+			config: &config.Config{
+				Tracker: config.TrackerConfig{
+					Kind: "mock",
+				},
+				Agent: config.AgentConfig{
+					Kind: "codex",
+				},
+				Workspace: config.WorkspaceConfig{
+					Root: "/tmp/workspaces",
+				},
+				Clarification: config.ClarificationConfig{
+					MaxRounds: 0,
+				},
+				Execution: config.ExecutionConfig{
+					MaxRetries: 3,
+				},
+			},
+			wantValid: false,
+		},
+		{
+			name: "negative execution max_retries",
+			config: &config.Config{
+				Tracker: config.TrackerConfig{
+					Kind: "mock",
+				},
+				Agent: config.AgentConfig{
+					Kind: "codex",
+				},
+				Workspace: config.WorkspaceConfig{
+					Root: "/tmp/workspaces",
+				},
+				Clarification: config.ClarificationConfig{
+					MaxRounds: 5,
+				},
+				Execution: config.ExecutionConfig{
+					MaxRetries: -1,
+				},
+			},
+			wantValid: false,
+		},
+		{
+			name: "invalid agent kind",
+			config: &config.Config{
+				Tracker: config.TrackerConfig{
+					Kind: "mock",
+				},
+				Agent: config.AgentConfig{
+					Kind: "invalid_agent",
+				},
+				Workspace: config.WorkspaceConfig{
+					Root: "/tmp/workspaces",
+				},
+				Clarification: config.ClarificationConfig{
+					MaxRounds: 5,
+				},
+				Execution: config.ExecutionConfig{
+					MaxRetries: 3,
+				},
+			},
+			wantValid: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validation := tt.config.ValidateSymphonyConfig()
+			if validation.Valid != tt.wantValid {
+				t.Errorf("expected valid=%v, got valid=%v, errors=%v", tt.wantValid, validation.Valid, validation.Errors)
 			}
 		})
 	}
