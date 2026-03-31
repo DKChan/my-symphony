@@ -2,6 +2,7 @@
 package workflow_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1201,5 +1202,344 @@ func TestEngine_RejectBDD_EmptyReason(t *testing.T) {
 	bddStage := wf.Stages[workflow.StageBDDReview]
 	if bddStage.Status != workflow.StatusFailed {
 		t.Errorf("expected bdd_review failed, got %s", bddStage.Status)
+	}
+}
+
+// TestEngine_TransitionToNeedsAttention 测试流转到待人工处理状态
+func TestEngine_TransitionToNeedsAttention(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "needs-attention-test"
+
+	// 初始化任务
+	engine.InitTask(taskID)
+
+	// 构建失败详情
+	details := workflow.NeedsAttentionDetails{
+		FailedStage:    "implementation",
+		FailedAt:       time.Now(),
+		RetryCount:     3,
+		MaxRetries:     3,
+		ErrorType:      "execution_failure",
+		ErrorMessage:   "test error message",
+		LastLogSnippet: "last log line",
+		Suggestion:     "check the error",
+	}
+
+	// 执行流转
+	wf, err := engine.TransitionToNeedsAttention(taskID, details)
+	if err != nil {
+		t.Fatalf("failed to transition: %v", err)
+	}
+
+	// 验证当前阶段
+	if wf.CurrentStage != workflow.StageNeedsAttention {
+		t.Errorf("expected current stage needs_attention, got %s", wf.CurrentStage)
+	}
+
+	// 验证 NeedsAttention 标记
+	if !wf.NeedsAttention {
+		t.Error("expected NeedsAttention to be true")
+	}
+
+	// 验证失败信息
+	if wf.FailureReason != "test error message" {
+		t.Errorf("expected failure reason 'test error message', got '%s'", wf.FailureReason)
+	}
+
+	if wf.RetryCount != 3 {
+		t.Errorf("expected retry count 3, got %d", wf.RetryCount)
+	}
+}
+
+// TestEngine_ResumeTask 测试恢复任务执行
+func TestEngine_ResumeTask(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "resume-test"
+
+	// 初始化任务并流转到 needs_attention
+	engine.InitTask(taskID)
+	details := workflow.NeedsAttentionDetails{
+		FailedStage:  "implementation",
+		FailedAt:     time.Now(),
+		RetryCount:   3,
+		MaxRetries:   3,
+		ErrorMessage: "test error",
+	}
+	engine.TransitionToNeedsAttention(taskID, details)
+
+	// 恢复任务
+	wf, err := engine.ResumeTask(taskID)
+	if err != nil {
+		t.Fatalf("failed to resume task: %v", err)
+	}
+
+	// 验证当前阶段恢复到失败阶段
+	if wf.CurrentStage != workflow.StageImplementation {
+		t.Errorf("expected current stage implementation, got %s", wf.CurrentStage)
+	}
+
+	// 验证 NeedsAttention 标记已清除
+	if wf.NeedsAttention {
+		t.Error("expected NeedsAttention to be false")
+	}
+}
+
+// TestEngine_HasReachedMaxRetries 测试检查是否达到最大重试次数
+func TestEngine_HasReachedMaxRetries(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "max-retries-test"
+
+	// 初始化任务
+	engine.InitTask(taskID)
+
+	// 设置最大重试次数
+	engine.SetMaxRetries(taskID, 3)
+
+	// 测试未达到上限
+	reached, err := engine.HasReachedMaxRetries(taskID)
+	if err != nil {
+		t.Fatalf("failed to check max retries: %v", err)
+	}
+	if reached {
+		t.Error("expected not reached max retries")
+	}
+
+	// 增加重试次数到 3
+	for i := 0; i < 3; i++ {
+		engine.IncrementRetryCount(taskID)
+	}
+
+	// 测试已达到上限
+	reached, err = engine.HasReachedMaxRetries(taskID)
+	if err != nil {
+		t.Fatalf("failed to check max retries: %v", err)
+	}
+	if !reached {
+		t.Error("expected reached max retries")
+	}
+}
+
+// TestEngine_ResumeTask_InvalidStage 测试不在待人工处理状态时恢复
+func TestEngine_ResumeTask_InvalidStage(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "resume-invalid"
+
+	// 初始化任务（在澄清阶段）
+	engine.InitTask(taskID)
+
+	// 尝试恢复（应该失败）
+	_, err := engine.ResumeTask(taskID)
+	if err == nil {
+		t.Error("expected error when not in needs_attention stage")
+	}
+}
+
+// TestEngine_ResumeTask_ResetRetryCount 测试恢复时重试计数器重置为 0
+func TestEngine_ResumeTask_ResetRetryCount(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "resume-reset-retry"
+
+	// 初始化任务并流转到 needs_attention，设置重试计数
+	engine.InitTask(taskID)
+	details := workflow.NeedsAttentionDetails{
+		FailedStage:  "implementation",
+		RetryCount:   5,
+		MaxRetries:   5,
+		ErrorMessage: "test error",
+	}
+	engine.TransitionToNeedsAttention(taskID, details)
+
+	// 验证重试计数为 5
+	wf := engine.GetWorkflow(taskID)
+	if wf.RetryCount != 5 {
+		t.Fatalf("expected retry count 5 before resume, got %d", wf.RetryCount)
+	}
+
+	// 恢复任务
+	wf, err := engine.ResumeTask(taskID)
+	if err != nil {
+		t.Fatalf("failed to resume task: %v", err)
+	}
+
+	// 验证重试计数已重置为 0
+	if wf.RetryCount != 0 {
+		t.Errorf("expected retry count 0 after resume, got %d", wf.RetryCount)
+	}
+
+	// 验证阶段的重试计数也已重置
+	implStage := wf.Stages[workflow.StageImplementation]
+	if implStage.RetryCount != 0 {
+		t.Errorf("expected stage retry count 0, got %d", implStage.RetryCount)
+	}
+}
+
+// TestEngine_GetFailureDetails 测试获取失败详情
+func TestEngine_GetFailureDetails(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "failure-details-test"
+
+	// 初始化任务并流转到 needs_attention
+	engine.InitTask(taskID)
+	details := workflow.NeedsAttentionDetails{
+		FailedStage:    "implementation",
+		FailedAt:       time.Now(),
+		RetryCount:     3,
+		MaxRetries:     5,
+		ErrorType:      "execution_failure",
+		ErrorMessage:   "test error message",
+		LastLogSnippet: "last log line",
+		Suggestion:     "check the error",
+	}
+	engine.TransitionToNeedsAttention(taskID, details)
+
+	// 获取失败详情
+	failureDetails, err := engine.GetFailureDetails(taskID)
+	if err != nil {
+		t.Fatalf("failed to get failure details: %v", err)
+	}
+
+	// 验证失败详情
+	if failureDetails.FailedStage != "implementation" {
+		t.Errorf("expected failed stage 'implementation', got '%s'", failureDetails.FailedStage)
+	}
+	if failureDetails.RetryCount != 3 {
+		t.Errorf("expected retry count 3, got %d", failureDetails.RetryCount)
+	}
+	if failureDetails.MaxRetries != 5 {
+		t.Errorf("expected max retries 5, got %d", failureDetails.MaxRetries)
+	}
+	if failureDetails.ErrorMessage != "test error message" {
+		t.Errorf("expected error message 'test error message', got '%s'", failureDetails.ErrorMessage)
+	}
+}
+
+// TestEngine_GetNeedsAttentionTasks 测试获取所有待人工处理任务
+func TestEngine_GetNeedsAttentionTasks(t *testing.T) {
+	engine := workflow.NewEngine()
+
+	// 初始应该为空
+	tasks := engine.GetNeedsAttentionTasks()
+	if len(tasks) != 0 {
+		t.Errorf("expected 0 needs_attention tasks initially, got %d", len(tasks))
+	}
+
+	// 添加两个待人工处理的任务
+	for i := 1; i <= 2; i++ {
+		taskID := fmt.Sprintf("needs-attention-%d", i)
+		engine.InitTask(taskID)
+		details := workflow.NeedsAttentionDetails{
+			FailedStage:  "implementation",
+			RetryCount:   3,
+			MaxRetries:   3,
+			ErrorMessage: "test error",
+		}
+		engine.TransitionToNeedsAttention(taskID, details)
+	}
+
+	// 验证列表包含两个任务
+	tasks = engine.GetNeedsAttentionTasks()
+	if len(tasks) != 2 {
+		t.Errorf("expected 2 needs_attention tasks, got %d", len(tasks))
+	}
+}
+
+// TestEngine_ReclarifyTask 测试重新澄清需求
+func TestEngine_ReclarifyTask(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "reclarify-test"
+
+	// 初始化任务并流转到 needs_attention
+	engine.InitTask(taskID)
+	details := workflow.NeedsAttentionDetails{
+		FailedStage:  "implementation",
+		RetryCount:   3,
+		MaxRetries:   3,
+		ErrorMessage: "test error",
+	}
+	engine.TransitionToNeedsAttention(taskID, details)
+
+	// 重新澄清需求
+	wf, err := engine.ReclarifyTask(taskID)
+	if err != nil {
+		t.Fatalf("failed to reclarify task: %v", err)
+	}
+
+	// 验证当前阶段恢复到澄清阶段
+	if wf.CurrentStage != workflow.StageClarification {
+		t.Errorf("expected current stage clarification, got %s", wf.CurrentStage)
+	}
+
+	// 验证 NeedsAttention 标记已清除
+	if wf.NeedsAttention {
+		t.Error("expected NeedsAttention to be false")
+	}
+
+	// 验证失败信息已清除
+	if wf.FailedStage != "" {
+		t.Errorf("expected empty failed stage, got '%s'", wf.FailedStage)
+	}
+
+	// 验证澄清阶段状态为进行中
+	clarificationStage := wf.Stages[workflow.StageClarification]
+	if clarificationStage.Status != workflow.StatusInProgress {
+		t.Errorf("expected clarification stage in_progress, got %s", clarificationStage.Status)
+	}
+}
+
+// TestEngine_AbandonTask 测试放弃任务
+func TestEngine_AbandonTask(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "abandon-test"
+
+	// 初始化任务并流转到 needs_attention
+	engine.InitTask(taskID)
+	details := workflow.NeedsAttentionDetails{
+		FailedStage:  "implementation",
+		RetryCount:   3,
+		MaxRetries:   3,
+		ErrorMessage: "test error",
+	}
+	engine.TransitionToNeedsAttention(taskID, details)
+
+	// 放弃任务
+	wf, err := engine.AbandonTask(taskID)
+	if err != nil {
+		t.Fatalf("failed to abandon task: %v", err)
+	}
+
+	// 验证当前阶段为已取消
+	if wf.CurrentStage != workflow.StageCancelled {
+		t.Errorf("expected current stage cancelled, got %s", wf.CurrentStage)
+	}
+
+	// 验证 NeedsAttention 标记已清除
+	if wf.NeedsAttention {
+		t.Error("expected NeedsAttention to be false")
+	}
+}
+
+// TestEngine_IncrementRetryCount 测试增加重试计数
+func TestEngine_IncrementRetryCount(t *testing.T) {
+	engine := workflow.NewEngine()
+	taskID := "retry-count-test"
+
+	// 初始化任务
+	engine.InitTask(taskID)
+
+	// 增加重试计数
+	for i := 1; i <= 3; i++ {
+		count, err := engine.IncrementRetryCount(taskID)
+		if err != nil {
+			t.Fatalf("failed to increment retry count: %v", err)
+		}
+		if count != i {
+			t.Errorf("expected retry count %d, got %d", i, count)
+		}
+	}
+
+	// 验证工作流状态
+	wf := engine.GetWorkflow(taskID)
+	if wf.RetryCount != 3 {
+		t.Errorf("expected retry count 3, got %d", wf.RetryCount)
 	}
 }

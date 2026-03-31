@@ -23,10 +23,13 @@ type MockIssue struct {
 
 // MockClient Mock跟踪器客户端（用于本地测试）
 type MockClient struct {
-	issues         []*domain.Issue                    // 所有问题
-	stateHist      map[string][]string                // 状态变更历史
-	conversations  map[string][]domain.ConversationTurn // 对话历史
-	bddContents    map[string]string                  // BDD 规则内容
+	issues              []*domain.Issue                      // 所有问题
+	stateHist           map[string][]string                  // 状态变更历史
+	conversations       map[string][]domain.ConversationTurn // 对话历史
+	bddContents         map[string]string                    // BDD 规则内容
+	architectureContents map[string]string                   // 架构设计内容
+	tddContents         map[string]string                    // TDD 规则内容
+	verificationReports map[string]*domain.VerificationReport // 验收报告
 }
 
 // NewMockClient 创建新的Mock客户端
@@ -53,10 +56,13 @@ func NewMockClient(mockIssues []config.MockIssueConfig) *MockClient {
 		issues[i] = issue
 	}
 	return &MockClient{
-		issues:        issues,
-		stateHist:     make(map[string][]string),
-		conversations: make(map[string][]domain.ConversationTurn),
-		bddContents:   make(map[string]string),
+		issues:               issues,
+		stateHist:            make(map[string][]string),
+		conversations:        make(map[string][]domain.ConversationTurn),
+		bddContents:          make(map[string]string),
+		architectureContents: make(map[string]string),
+		tddContents:          make(map[string]string),
+		verificationReports:  make(map[string]*domain.VerificationReport),
 	}
 }
 
@@ -348,4 +354,169 @@ func (c *MockClient) RejectBDD(ctx context.Context, identifier string, reason st
 // SetBDDContent 设置 BDD 内容（用于测试）
 func (c *MockClient) SetBDDContent(identifier string, content string) {
 	c.bddContents[identifier] = content
+}
+
+// GetVerificationReport 获取任务的验收报告
+func (c *MockClient) GetVerificationReport(ctx context.Context, identifier string) (*domain.VerificationReport, error) {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			report, exists := c.verificationReports[identifier]
+			if !exists {
+				return nil, nil
+			}
+			return report, nil
+		}
+	}
+	return nil, fmt.Errorf("issue not found: %s", identifier)
+}
+
+// UpdateVerificationReport 更新任务的验收报告
+func (c *MockClient) UpdateVerificationReport(ctx context.Context, identifier string, report *domain.VerificationReport) error {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			c.verificationReports[identifier] = report
+			now := time.Now()
+			issue.UpdatedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("issue not found: %s", identifier)
+}
+
+// ApproveVerification 通过验收
+func (c *MockClient) ApproveVerification(ctx context.Context, identifier string) error {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			c.stateHist[issue.ID] = append(c.stateHist[issue.ID], issue.State)
+			issue.State = "Done"
+			now := time.Now()
+			issue.UpdatedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("issue not found: %s", identifier)
+}
+
+// RejectVerification 驳回验收
+func (c *MockClient) RejectVerification(ctx context.Context, identifier string, reason string) error {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			c.stateHist[issue.ID] = append(c.stateHist[issue.ID], issue.State)
+			issue.State = "In Progress"
+			// 将驳回原因存储在描述中
+			if issue.Description != nil {
+				*issue.Description = *issue.Description + "\n\n验收驳回原因: " + reason
+			} else {
+				desc := "验收驳回原因: " + reason
+				issue.Description = &desc
+			}
+			now := time.Now()
+			issue.UpdatedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("issue not found: %s", identifier)
+}
+
+// SetVerificationReport 设置验收报告（用于测试）
+func (c *MockClient) SetVerificationReport(identifier string, report *domain.VerificationReport) {
+	c.verificationReports[identifier] = report
+}
+
+// GetArchitectureContent 获取任务的架构设计内容
+func (c *MockClient) GetArchitectureContent(ctx context.Context, identifier string) (string, error) {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			content, exists := c.architectureContents[identifier]
+			if !exists {
+				return "", fmt.Errorf("architecture content not found for issue: %s", identifier)
+			}
+			return content, nil
+		}
+	}
+	return "", fmt.Errorf("issue not found: %s", identifier)
+}
+
+// UpdateArchitectureContent 更新任务的架构设计内容
+func (c *MockClient) UpdateArchitectureContent(ctx context.Context, identifier string, content string) error {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			c.architectureContents[identifier] = content
+			now := time.Now()
+			issue.UpdatedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("issue not found: %s", identifier)
+}
+
+// GetTDDContent 获取任务的 TDD 规则内容
+func (c *MockClient) GetTDDContent(ctx context.Context, identifier string) (string, error) {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			content, exists := c.tddContents[identifier]
+			if !exists {
+				return "", fmt.Errorf("tdd content not found for issue: %s", identifier)
+			}
+			return content, nil
+		}
+	}
+	return "", fmt.Errorf("issue not found: %s", identifier)
+}
+
+// UpdateTDDContent 更新任务的 TDD 规则内容
+func (c *MockClient) UpdateTDDContent(ctx context.Context, identifier string, content string) error {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			c.tddContents[identifier] = content
+			now := time.Now()
+			issue.UpdatedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("issue not found: %s", identifier)
+}
+
+// ApproveArchitecture 通过架构审核
+func (c *MockClient) ApproveArchitecture(ctx context.Context, identifier string) error {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			c.stateHist[issue.ID] = append(c.stateHist[issue.ID], issue.State)
+			issue.State = "Architecture Approved"
+			now := time.Now()
+			issue.UpdatedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("issue not found: %s", identifier)
+}
+
+// RejectArchitecture 驳回架构审核
+func (c *MockClient) RejectArchitecture(ctx context.Context, identifier string, reason string) error {
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier {
+			c.stateHist[issue.ID] = append(c.stateHist[issue.ID], issue.State)
+			issue.State = "Architecture Rejected"
+			if issue.Description != nil {
+				*issue.Description = *issue.Description + "\n\n架构驳回原因: " + reason
+			} else {
+				desc := "架构驳回原因: " + reason
+				issue.Description = &desc
+			}
+			now := time.Now()
+			issue.UpdatedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("issue not found: %s", identifier)
+}
+
+// SetArchitectureContent 设置架构内容（用于测试）
+func (c *MockClient) SetArchitectureContent(identifier string, content string) {
+	c.architectureContents[identifier] = content
+}
+
+// SetTDDContent 设置 TDD 内容（用于测试）
+func (c *MockClient) SetTDDContent(identifier string, content string) {
+	c.tddContents[identifier] = content
 }

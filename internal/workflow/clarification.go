@@ -67,11 +67,12 @@ type ClarificationResult struct {
 
 // ClarificationManager 澄清管理器，负责处理澄清轮次限制、跳过逻辑和AI Agent需求理解调用
 type ClarificationManager struct {
-	engine     *Engine
-	config     *config.Config
-	tracker    tracker.Tracker
-	runner     agent.Runner
-	promptTmpl string
+	engine        *Engine
+	config        *config.Config
+	tracker       tracker.Tracker
+	runner        agent.Runner
+	promptTmpl    string
+	bddGenerator  BDDGeneratorInterface // BDD生成器接口
 }
 
 // NewClarificationManager 创建新的澄清管理器
@@ -99,6 +100,11 @@ func (cm *ClarificationManager) SetTracker(t tracker.Tracker) {
 // SetRunner 设置 AI Agent 运行器（用于依赖注入）
 func (cm *ClarificationManager) SetRunner(r agent.Runner) {
 	cm.runner = r
+}
+
+// SetBDDGenerator 设置 BDD 生成器（用于依赖注入）
+func (cm *ClarificationManager) SetBDDGenerator(g BDDGeneratorInterface) {
+	cm.bddGenerator = g
 }
 
 // CheckRoundLimit 检查澄清轮次是否达到上限
@@ -326,6 +332,7 @@ func (cm *ClarificationManager) GetMaxRounds() int {
 }
 
 // CompleteClarification 完成澄清阶段（正常完成，不标记不完整）
+// 如果有 BDD 生成器，会自动生成 BDD 规则
 func (cm *ClarificationManager) CompleteClarification(taskID string) (*TaskWorkflow, error) {
 	workflow := cm.engine.GetWorkflow(taskID)
 	if workflow == nil {
@@ -338,7 +345,37 @@ func (cm *ClarificationManager) CompleteClarification(taskID string) (*TaskWorkf
 	}
 
 	// 正常推进阶段
-	return cm.engine.AdvanceStage(taskID)
+	wf, err := cm.engine.AdvanceStage(taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	return wf, nil
+}
+
+// CompleteClarificationWithBDD 完成澄清阶段并生成 BDD 规则
+// Story 4.1: 需求澄清完成后自动生成 BDD 规则
+func (cm *ClarificationManager) CompleteClarificationWithBDD(ctx context.Context, taskID string, task *domain.Issue, history []domain.ConversationTurn) (*TaskWorkflow, *BDDGenerationResult, error) {
+	// 先完成澄清阶段
+	wf, err := cm.CompleteClarification(taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 如果有 BDD 生成器，生成 BDD 规则
+	var bddResult *BDDGenerationResult
+	if cm.bddGenerator != nil {
+		bddResult, err = cm.bddGenerator.GenerateBDDRules(ctx, task, history)
+		if err != nil {
+			// BDD 生成失败，记录但继续推进
+			// 生成失败时 BDD 文件不会存在，审核页面会显示空内容
+			bddResult = &BDDGenerationResult{
+				Error: err,
+			}
+		}
+	}
+
+	return wf, bddResult, nil
 }
 
 // UpdateStageTimestamp 更新阶段时间戳（用于每轮开始时）
@@ -484,7 +521,32 @@ func (cm *ClarificationManager) SubmitAnswer(ctx context.Context, taskID, identi
 		result.Question = question
 		result.Status = StatusNeedsClarification
 	} else {
-		// 澄清完成，正常推进到下一阶段
+		// 澄清完成，生成 BDD 规则并推进到下一阶段
+		// Story 4.1: 自动生成 BDD 规则
+		if cm.bddGenerator != nil {
+			// 获取任务信息
+			issue, getErr := cm.tracker.GetTask(ctx, identifier)
+			if getErr != nil {
+				// 获取任务失败，记录但继续
+				fmt.Printf("warning: failed to get task for BDD generation: %v\n", getErr)
+			} else {
+				// 获取完整的对话历史用于 BDD 生成
+				fullHistory, _ := cm.tracker.GetConversationHistory(ctx, identifier)
+
+				// 生成 BDD 规则
+				bddResult, bddErr := cm.bddGenerator.GenerateBDDRules(ctx, issue, fullHistory)
+				if bddErr != nil {
+					// BDD 生成失败，记录错误但继续推进
+					// 审核页面会显示空内容，用户可以重新生成
+					fmt.Printf("warning: BDD generation failed: %v\n", bddErr)
+				} else if bddResult != nil && bddResult.FilePath != "" {
+					// BDD 生成成功，记录文件路径
+					_ = cm.engine.SetBDDConstraintsPath(taskID, bddResult.FilePath)
+				}
+			}
+		}
+
+		// 推进到下一阶段
 		_, err := cm.CompleteClarification(taskID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to complete clarification: %w", err)

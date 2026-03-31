@@ -185,6 +185,16 @@ type StageState struct {
 	Error string `json:"error,omitempty"`
 	// RetryCount 重试次数
 	RetryCount int `json:"retry_count,omitempty"`
+	// FailedAt 失败时间 (Epic 8)
+	FailedAt *time.Time `json:"failed_at,omitempty"`
+	// ErrorType 错误类型 (Epic 8)
+	ErrorType string `json:"error_type,omitempty"`
+	// ErrorMessage 错误消息 (Epic 8)
+	ErrorMessage string `json:"error_message,omitempty"`
+	// LastLogSnippet 最后的日志片段 (Epic 8)
+	LastLogSnippet string `json:"last_log_snippet,omitempty"`
+	// Suggestion 修复建议 (Epic 8)
+	Suggestion string `json:"suggestion,omitempty"`
 }
 
 // RecoveryAction 恢复动作类型
@@ -245,4 +255,62 @@ type OrchestratorState struct {
 	CodexTotals *CodexTotals `json:"codex_totals"`
 	// CodexRateLimits 速率限制快照
 	CodexRateLimits interface{} `json:"codex_rate_limits,omitempty"`
+}
+
+// VerificationReport 验收报告
+type VerificationReport struct {
+	// TaskID 任务ID
+	TaskID string `json:"task_id"`
+	// TaskIdentifier 任务标识符
+	TaskIdentifier string `json:"task_identifier"`
+	// TaskTitle 任务标题
+	TaskTitle string `json:"task_title"`
+	// GeneratedAt 生成时间
+	GeneratedAt time.Time `json:"generated_at"`
+	// TestResults 测试结果
+	TestResults *TestResults `json:"test_results"`
+	// BDDValidation BDD验证结果
+	BDDValidation []BDDScenarioResult `json:"bdd_validation"`
+	// ImplementationSummary 实现摘要
+	ImplementationSummary string `json:"implementation_summary"`
+	// Recommendations 建议
+	Recommendations []string `json:"recommendations,omitempty"`
+	// OverallStatus 总体状态 (PASS/FAIL)
+	OverallStatus string `json:"overall_status"`
+	// RawContent 原始报告内容（Markdown格式）
+	RawContent string `json:"raw_content,omitempty"`
+}
+
+// TestResults 测试结果
+type TestResults struct {
+	// Total 总测试数
+	Total int `json:"total"`
+	// Passed 通过数
+	Passed int `json:"passed"`
+	// Failed 失败数
+	Failed int `json:"failed"`
+	// Skipped 跳过数
+	Skipped int `json:"skipped"`
+	// PassedTests 通过的测试列表
+	PassedTests []string `json:"passed_tests,omitempty"`
+	// FailedTests 失败的测试列表（含错误信息）
+	FailedTests []TestFailure `json:"failed_tests,omitempty"`
+}
+
+// TestFailure 测试失败详情
+type TestFailure struct {
+	// TestName 测试名称
+	TestName string `json:"test_name"`
+	// ErrorMessage 错误信息
+	ErrorMessage string `json:"error_message"`
+}
+
+// BDDScenarioResult BDD场景验证结果
+type BDDScenarioResult struct {
+	// ScenarioName 场景名称
+	ScenarioName string `json:"scenario_name"`
+	// Status 状态 (pass/fail)
+	Status string `json:"status"`
+	// Notes 备注
+	Notes string `json:"notes,omitempty"`
 }

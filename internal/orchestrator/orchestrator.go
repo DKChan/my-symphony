@@ -20,12 +20,13 @@ import (
 
 // Orchestrator 核心编排器
 type Orchestrator struct {
-	cfg            *config.Config
-	trackerClient  tracker.Tracker
-	workspaceMgr   *workspace.Manager
-	agentRunner    agent.Runner
-	promptTemplate string
-	workflowEngine *workflow.Engine
+	cfg              *config.Config
+	trackerClient    tracker.Tracker
+	workspaceMgr     *workspace.Manager
+	agentRunner      agent.Runner
+	promptTemplate   string
+	workflowEngine   *workflow.Engine
+	constraintMgr    *workflow.ConstraintManager // BDD 约束管理器
 
 	// 运行时状态
 	mu           sync.RWMutex
@@ -44,13 +45,17 @@ type Orchestrator struct {
 
 // New 创建新的编排器
 func New(cfg *config.Config, promptTemplate string) *Orchestrator {
+	workflowEngine := workflow.NewEngine()
+	constraintMgr := workflow.NewConstraintManager(workflowEngine, cfg.Workspace.Root)
+
 	return &Orchestrator{
 		cfg:            cfg,
 		trackerClient:  tracker.NewTracker(cfg),
 		workspaceMgr:   workspace.NewManager(cfg),
 		agentRunner:    agent.NewRunner(cfg),
 		promptTemplate: promptTemplate,
-		workflowEngine: workflow.NewEngine(),
+		workflowEngine: workflowEngine,
+		constraintMgr:  constraintMgr,
 		retryTimers:    make(map[string]*time.Timer),
 		cancelContexts: make(map[string]context.CancelFunc),
 		state: &domain.OrchestratorState{
@@ -389,13 +394,16 @@ func (o *Orchestrator) runWorker(ctx context.Context, issue *domain.Issue, attem
 		return
 	}
 
+	// 构建包含 BDD 约束的完整 prompt
+	fullPrompt := o.buildFullPrompt(ctx, issue, attempt)
+
 	// 运行代理
 	result, err := o.agentRunner.RunAttempt(
 		ctx,
 		issue,
 		ws.Path,
 		attempt,
-		o.promptTemplate,
+		fullPrompt,
 		func(event string, data any) {
 			o.onAgentEvent(issue.ID, event, data)
 		},
@@ -418,6 +426,39 @@ func (o *Orchestrator) runWorker(ctx context.Context, issue *domain.Issue, attem
 		logging.LogTaskFailed(issue.ID, issue.Identifier, "agent", fmt.Errorf("run failed: %v", result.Error))
 		o.onWorkerExit(issue.ID, issue.Identifier, fmt.Errorf("run failed: %v", result.Error), attempt)
 	}
+}
+
+// buildFullPrompt 构建包含 BDD 约束的完整 prompt
+// 按照方案 B，在调用 Agent 前构建完整 prompt
+func (o *Orchestrator) buildFullPrompt(ctx context.Context, issue *domain.Issue, attempt *int) string {
+	// 获取工作流状态
+	taskWorkflow := o.workflowEngine.GetWorkflow(issue.ID)
+	
+	// 加载 BDD 约束条件
+	var bddConstraints string
+	if o.constraintMgr != nil && taskWorkflow != nil {
+		// 检查 BDD 审核阶段是否已完成
+		bddStage := taskWorkflow.GetStage(workflow.StageBDDReview)
+		if bddStage != nil && bddStage.Status == workflow.StatusCompleted {
+			constraints, err := o.constraintMgr.LoadBDDConstraints(issue.ID)
+			if err == nil && constraints != nil {
+				bddConstraints = o.constraintMgr.FormatConstraintsForPrompt(constraints)
+				logging.Info("bdd constraints loaded for implementation",
+					"task_id", issue.ID,
+					"identifier", issue.Identifier,
+					"scenarios_count", len(constraints.Scenarios),
+				)
+			}
+		}
+	}
+	
+	// 如果没有 BDD 约束，返回原始 prompt
+	if bddConstraints == "" {
+		return o.promptTemplate
+	}
+	
+	// 注入 BDD 约束到 prompt
+	return agent.InjectBDDConstraints(o.promptTemplate, bddConstraints)
 }
 
 // onAgentEvent 处理代理事件
@@ -485,7 +526,12 @@ func (o *Orchestrator) onWorkerExit(issueID, identifier string, err error, attem
 	logging.LogWorkerExit(issueID, identifier, err, retryAttempt)
 
 	if err != nil {
-		o.scheduleRetry(issueID, identifier, attempt, err.Error())
+		// 检查是否达到重试上限
+		if o.shouldTransitionToNeedsAttention(retryAttempt) {
+			o.transitionToNeedsAttentionLocked(issueID, identifier, retryAttempt, err.Error())
+		} else {
+			o.scheduleRetryLocked(issueID, identifier, attempt, err.Error())
+		}
 	}
 }
 
@@ -519,6 +565,13 @@ func (o *Orchestrator) terminateAndCleanup(issueID string, entry *domain.Running
 
 // scheduleRetry 安排重试
 func (o *Orchestrator) scheduleRetry(issueID, identifier string, attempt *int, errorMsg string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.scheduleRetryLocked(issueID, identifier, attempt, errorMsg)
+}
+
+// scheduleRetryLocked 安排重试（已持有锁版本）
+func (o *Orchestrator) scheduleRetryLocked(issueID, identifier string, attempt *int, errorMsg string) {
 	var nextAttempt int
 	if attempt != nil {
 		nextAttempt = *attempt + 1
@@ -576,6 +629,85 @@ func (o *Orchestrator) scheduleContinuationRetry(issueID, identifier string) {
 	o.retryTimers[issueID] = time.AfterFunc(1*time.Second, func() {
 		o.onRetryTimer(issueID)
 	})
+}
+
+// shouldTransitionToNeedsAttention 判断是否应该流转到待人工处理状态
+// 当重试次数达到配置的上限时返回 true
+func (o *Orchestrator) shouldTransitionToNeedsAttention(retryAttempt int) bool {
+	maxRetries := o.cfg.Execution.MaxRetries
+	if maxRetries <= 0 {
+		return false // 无限制，不流转
+	}
+	return retryAttempt >= maxRetries
+}
+
+// transitionToNeedsAttentionLocked 流转到待人工处理状态
+// 注意：此方法必须在持有锁的情况下调用
+func (o *Orchestrator) transitionToNeedsAttentionLocked(issueID, identifier string, retryAttempt int, errorMsg string) {
+	logging.Info("transitioning task to needs_attention",
+		"task_id", issueID,
+		"identifier", identifier,
+		"retry_attempt", retryAttempt,
+		"error", errorMsg,
+	)
+
+	// 获取当前阶段
+	currentStage, err := o.workflowEngine.GetCurrentStage(issueID)
+	if err != nil {
+		logging.Error("failed to get current stage for needs_attention transition",
+			"task_id", issueID,
+			"error", err.Error(),
+		)
+		return
+	}
+
+	// 构建失败详情
+	details := workflow.NeedsAttentionDetails{
+		FailedStage:    string(currentStage.Name),
+		FailedAt:       time.Now(),
+		RetryCount:     retryAttempt,
+		MaxRetries:     o.cfg.Execution.MaxRetries,
+		ErrorType:      "execution_failure",
+		ErrorMessage:   errorMsg,
+		Suggestion:     "请检查错误信息并手动修复后继续执行",
+	}
+
+	// 流转到待人工处理状态
+	_, err = o.workflowEngine.TransitionToNeedsAttention(issueID, details)
+	if err != nil {
+		logging.Error("failed to transition to needs_attention",
+			"task_id", issueID,
+			"error", err.Error(),
+		)
+		return
+	}
+
+	// 异步更新 Tracker 状态（不在持有锁的情况下进行网络调用）
+	go func() {
+		ctx := context.Background()
+		if err := o.trackerClient.UpdateStage(ctx, identifier, domain.StageState{
+			Name:   string(workflow.StageNeedsAttention),
+			Status: string(workflow.StatusInProgress),
+		}); err != nil {
+			logging.Error("failed to update tracker state for needs_attention",
+				"task_id", issueID,
+				"identifier", identifier,
+				"error", err.Error(),
+			)
+		}
+	}()
+
+	// 通知观察者（触发 SSE 推送）
+	if o.onStateChange != nil {
+		go o.onStateChange()
+	}
+
+	logging.Info("task transitioned to needs_attention",
+		"task_id", issueID,
+		"identifier", identifier,
+		"failed_stage", currentStage.Name,
+		"retry_count", retryAttempt,
+	)
 }
 
 // calculateBackoff 计算退退避时间
@@ -902,6 +1034,11 @@ func (o *Orchestrator) runWorkerWithCancel(parentCtx context.Context, issue *dom
 // GetWorkflowEngine 获取工作流引擎
 func (o *Orchestrator) GetWorkflowEngine() *workflow.Engine {
 	return o.workflowEngine
+}
+
+// GetWorkspaceManager 获取工作空间管理器
+func (o *Orchestrator) GetWorkspaceManager() *workspace.Manager {
+	return o.workspaceMgr
 }
 
 // AdvanceTaskStage 推进任务到下一阶段

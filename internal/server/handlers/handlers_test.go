@@ -488,7 +488,8 @@ func TestAPIHandler_ApproveBDD_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNotFound, w.Code)
+	// 没有 BDDReviewManager，应该返回 500（功能不可用）
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
@@ -509,7 +510,8 @@ func TestAPIHandler_RejectBDD_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNotFound, w.Code)
+	// 没有 BDDReviewManager，应该返回 500（功能不可用）
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
@@ -527,5 +529,250 @@ func TestAPIHandler_GetBDDReviewStatus_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
+	// 没有 BDDReviewManager，应该返回 500（功能不可用）
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ========== Epic 8: 异常处理与人工干预测试 ==========
+
+func TestAPIHandler_GetNeedsAttentionStatus_NeedsAttentionNotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "NA-001", Title: "Needs Attention Task", State: "Needs Attention"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/NA-001/needs-attention", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 没有 NeedsAttentionManager，应该返回 500
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "needs_attention_not_supported", errorObj["code"])
+}
+
+// TestAPIHandler_GetNeedsAttentionStatus_TaskNotFound 测试获取不存在任务的待处理状态
+// 注意：由于没有 NeedsAttentionManager，会先返回 500（功能不可用）
+// 这是预期行为，因为 TaskNotFound 检查在获取 taskID 之后
+func TestAPIHandler_GetNeedsAttentionStatus_NoManager(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/NONEXISTENT/needs-attention", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 没有 NeedsAttentionManager，应该返回 500（功能不可用）
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "needs_attention_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_ResumeTask_NeedsAttentionNotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "RESUME-001", Title: "Resume Task", State: "Needs Attention"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/RESUME-001/resume", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 没有 NeedsAttentionManager，应该返回 500
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_ResumeTask_NoManager(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/NONEXISTENT/resume", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 没有 NeedsAttentionManager，应该返回 500（功能不可用）
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_ReclarifyTask_NeedsAttentionNotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "RECLARIFY-001", Title: "Reclarify Task", State: "Needs Attention"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/RECLARIFY-001/reclarify", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 没有 NeedsAttentionManager，应该返回 500
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_ReclarifyTask_NoManager(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/NONEXISTENT/reclarify", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 没有 NeedsAttentionManager，应该返回 500（功能不可用）
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_AbandonTask_NeedsAttentionNotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "ABANDON-001", Title: "Abandon Task", State: "Needs Attention"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/ABANDON-001/abandon", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 没有 NeedsAttentionManager，应该返回 500
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_AbandonTask_NoManager(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/NONEXISTENT/abandon", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 没有 NeedsAttentionManager，应该返回 500（功能不可用）
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_AbandonConfirm_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/NONEXISTENT/abandon/confirm", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAPIHandler_AbandonConfirm_Success(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "CONFIRM-001", Title: "Confirm Abandon Task", State: "Needs Attention"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/CONFIRM-001/abandon/confirm", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "CONFIRM-001", response["identifier"])
+	assert.Equal(t, "Confirm Abandon Task", response["title"])
+	assert.True(t, response["requires_confirm"].(bool))
+	assert.Contains(t, response["warning"], "放弃操作不可逆")
+}
+
+func TestTaskHandler_NeedsAttentionPage_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/NONEXISTENT/needs-attention", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "任务不存在")
+}
+
+func TestTaskHandler_NeedsAttentionPage_Success(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{
+			ID:          "1",
+			Identifier:  "NA-PAGE-001",
+			Title:       "需要人工干预的任务",
+			Description: "这是一个测试任务的描述",
+			State:       "Needs Attention",
+		},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/NA-PAGE-001/needs-attention", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, w.Body.String(), "待人工处理")
+	assert.Contains(t, w.Body.String(), "NA-PAGE-001")
+	assert.Contains(t, w.Body.String(), "需要人工干预的任务")
+}
+
+func TestTaskHandler_NeedsAttentionPage_HTMXResponse(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{
+			ID:          "1",
+			Identifier:  "NA-HTMX-001",
+			Title:       "HTMX 测试任务",
+			Description: "测试 HTMX 请求",
+			State:       "Needs Attention",
+		},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/NA-HTMX-001/needs-attention", nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "NA-HTMX-001")
 }

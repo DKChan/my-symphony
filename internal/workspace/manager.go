@@ -189,3 +189,121 @@ func (m *Manager) CleanupTerminalWorkspaces(ctx context.Context, terminalIssues 
 	}
 	return nil
 }
+
+// GitCommit 在工作空间执行 Git 提交
+// commitMessage: 提交消息
+// 返回 commit hash 和错误
+func (m *Manager) GitCommit(ctx context.Context, workspacePath string, identifier string, title string) (string, error) {
+	// 检查是否是 Git 仓库
+	if !m.isGitRepository(workspacePath) {
+		return "", fmt.Errorf("workspace is not a git repository: %s", workspacePath)
+	}
+
+	// 构建 commit message
+	commitMessage := fmt.Sprintf("[%s] %s\n\nCompleted via Symphony workflow.", identifier, title)
+
+	// 执行 git add -A
+	if err := m.runGitCommand(ctx, workspacePath, "add", "-A"); err != nil {
+		return "", fmt.Errorf("git add failed: %w", err)
+	}
+
+	// 检查是否有变更需要提交
+	statusOutput, err := m.getGitStatus(ctx, workspacePath)
+	if err != nil {
+		return "", fmt.Errorf("git status failed: %w", err)
+	}
+
+	// 如果没有变更，跳过提交
+	if m.isClean(statusOutput) {
+		return "", nil // 没有变更，不提交
+	}
+
+	// 执行 git commit
+	if err := m.runGitCommand(ctx, workspacePath, "commit", "-m", commitMessage); err != nil {
+		return "", fmt.Errorf("git commit failed: %w", err)
+	}
+
+	// 获取 commit hash
+	hash, err := m.getCommitHash(ctx, workspacePath)
+	if err != nil {
+		return "", fmt.Errorf("get commit hash failed: %w", err)
+	}
+
+	return hash, nil
+}
+
+// isGitRepository 检查目录是否是 Git 仓库
+func (m *Manager) isGitRepository(path string) bool {
+	gitDir := filepath.Join(path, ".git")
+	info, err := os.Stat(gitDir)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}
+
+// runGitCommand 执行 Git 命令
+func (m *Manager) runGitCommand(ctx context.Context, workspacePath string, args ...string) error {
+	timeout := time.Duration(m.cfg.Hooks.TimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 60 * time.Second // 默认 60 秒超时
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = workspacePath
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("SYMPHONY_WORKSPACE=%s", workspacePath),
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := string(output)
+		if len(outputStr) > 500 {
+			outputStr = outputStr[:500] + "..."
+		}
+		return fmt.Errorf("git command failed: %v - %s", err, outputStr)
+	}
+
+	return nil
+}
+
+// getGitStatus 获取 Git 状态
+func (m *Manager) getGitStatus(ctx context.Context, workspacePath string) (string, error) {
+	timeout := 30 * time.Second
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	cmd.Dir = workspacePath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return string(output), nil
+}
+
+// isClean 检查 Git 状态是否干净
+func (m *Manager) isClean(status string) bool {
+	return strings.TrimSpace(status) == ""
+}
+
+// getCommitHash 获取最新的 commit hash
+func (m *Manager) getCommitHash(ctx context.Context, workspacePath string) (string, error) {
+	timeout := 10 * time.Second
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	cmd.Dir = workspacePath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}

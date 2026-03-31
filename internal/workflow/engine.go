@@ -954,3 +954,848 @@ func (e *Engine) SetIdentifierForWorkflow(taskID string, identifier string) erro
 
 	return nil
 }
+
+// ResetStage 重置阶段状态（用于重试）
+// 将指定阶段重置为待开始状态，清除错误和时间戳
+func (e *Engine) ResetStage(taskID string, stage StageName) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return ErrWorkflowNotFound
+	}
+
+	stageState, ok := workflow.Stages[stage]
+	if !ok {
+		return ErrInvalidStage
+	}
+
+	now := time.Now()
+
+	// 重置阶段状态
+	stageState.Status = StatusPending
+	stageState.StartedAt = nil
+	stageState.CompletedAt = nil
+	stageState.Error = ""
+	stageState.Round = 0
+	stageState.UpdatedAt = &now
+
+	// 如果重置的是当前阶段，设置为进行中
+	if stage == workflow.CurrentStage {
+		stageState.Status = StatusInProgress
+		stageState.StartedAt = &now
+	}
+
+	workflow.UpdatedAt = now
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return nil
+}
+
+// ApproveVerification 通过验收
+// 状态流转: verification (pending/in_progress) -> completed
+// 触发 Git 提交
+func (e *Engine) ApproveVerification(taskID string) (*TaskWorkflow, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	// 检查当前阶段是否为验收阶段
+	if workflow.CurrentStage != StageVerification {
+		return nil, fmt.Errorf("%w: current stage is %s, not verification", ErrInvalidStage, workflow.CurrentStage)
+	}
+
+	verificationStage := workflow.Stages[StageVerification]
+	if verificationStage == nil {
+		return nil, ErrInvalidStage
+	}
+
+	// 检验收阶段状态（必须是 pending 或 in_progress）
+	if verificationStage.Status != StatusPending && verificationStage.Status != StatusInProgress {
+		return nil, fmt.Errorf("%w: verification stage status is %s", ErrInvalidTransition, verificationStage.Status)
+	}
+
+	now := time.Now()
+
+	// 标记验收阶段为完成
+	verificationStage.Status = StatusCompleted
+	verificationStage.CompletedAt = &now
+	verificationStage.UpdatedAt = &now
+
+	// 更新工作流状态
+	workflow.UpdatedAt = now
+
+	// 标记工作流完成（通过设置 Metadata）
+	if workflow.Metadata == nil {
+		workflow.Metadata = make(map[string]string)
+	}
+	workflow.Metadata["verification_status"] = "approved"
+	workflow.Metadata["completed_at"] = now.Format(time.RFC3339)
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow, nil
+}
+
+// RejectVerification 驳回验收
+// 状态流转: verification (pending/in_progress) -> implementation (in_progress)
+// 记录驳回原因，触发重新实现
+func (e *Engine) RejectVerification(taskID string, reason string) (*TaskWorkflow, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	// 检查当前阶段是否为验收阶段
+	if workflow.CurrentStage != StageVerification {
+		return nil, fmt.Errorf("%w: current stage is %s, not verification", ErrInvalidStage, workflow.CurrentStage)
+	}
+
+	verificationStage := workflow.Stages[StageVerification]
+	if verificationStage == nil {
+		return nil, ErrInvalidStage
+	}
+
+	// 检验收阶段状态（必须是 pending 或 in_progress）
+	if verificationStage.Status != StatusPending && verificationStage.Status != StatusInProgress {
+		return nil, fmt.Errorf("%w: verification stage status is %s", ErrInvalidTransition, verificationStage.Status)
+	}
+
+	now := time.Now()
+
+	// 标记验收阶段为失败，记录驳回原因
+	verificationStage.Status = StatusFailed
+	verificationStage.Error = reason
+	verificationStage.UpdatedAt = &now
+
+	// 重置实现阶段状态，准备重新实现
+	implementationStage := workflow.Stages[StageImplementation]
+	if implementationStage != nil {
+		implementationStage.Status = StatusInProgress
+		implementationStage.Error = "" // 清除之前的错误
+		implementationStage.UpdatedAt = &now
+		// 重置重试计数
+		implementationStage.StartedAt = &now
+	}
+
+	// 更新当前阶段指针回实现阶段
+	workflow.CurrentStage = StageImplementation
+	workflow.UpdatedAt = now
+
+	// 记录驳回信息到 Metadata
+	if workflow.Metadata == nil {
+		workflow.Metadata = make(map[string]string)
+	}
+	workflow.Metadata["verification_status"] = "rejected"
+	workflow.Metadata["verification_reject_reason"] = reason
+	workflow.Metadata["verification_rejected_at"] = now.Format(time.RFC3339)
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow, nil
+}
+
+// GetVerificationStatus 获取验收状态
+func (e *Engine) GetVerificationStatus(taskID string) (*VerificationStatus, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	status := &VerificationStatus{
+		TaskID:       taskID,
+		CurrentStage: workflow.CurrentStage,
+		Status:       "",
+		CanApprove:   false,
+		CanReject:    false,
+		Approved:     false,
+		Rejected:     false,
+	}
+
+	// 检查验收阶段状态
+	verificationStage := workflow.Stages[StageVerification]
+	if verificationStage != nil {
+		status.Status = string(verificationStage.Status)
+
+		// 判断是否可以进行审核操作
+		if workflow.CurrentStage == StageVerification &&
+			(verificationStage.Status == StatusPending || verificationStage.Status == StatusInProgress) {
+			status.CanApprove = true
+			status.CanReject = true
+		}
+
+		// 判断已审核状态
+		if verificationStage.Status == StatusCompleted {
+			status.Approved = true
+		}
+		if verificationStage.Status == StatusFailed {
+			status.Rejected = true
+			status.RejectReason = verificationStage.Error
+		}
+	}
+
+	// 从 Metadata 获取额外信息
+	if workflow.Metadata != nil {
+		if v, ok := workflow.Metadata["verification_status"]; ok {
+			if v == "approved" {
+				status.Approved = true
+			} else if v == "rejected" {
+				status.Rejected = true
+			}
+		}
+		if v, ok := workflow.Metadata["verification_reject_reason"]; ok {
+			status.RejectReason = v
+		}
+	}
+
+	return status, nil
+}
+
+// CanApproveOrRejectVerification 判断是否可以进行验收审核操作
+func (e *Engine) CanApproveOrRejectVerification(taskID string) (bool, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return false, ErrWorkflowNotFound
+	}
+
+	// 必须在验收阶段
+	if workflow.CurrentStage != StageVerification {
+		return false, nil
+	}
+
+	verificationStage := workflow.Stages[StageVerification]
+	if verificationStage == nil {
+		return false, nil
+	}
+
+	// 验收阶段必须是 pending 或 in_progress
+	return verificationStage.Status == StatusPending || verificationStage.Status == StatusInProgress, nil
+}
+
+// VerificationStatus 验收状态
+type VerificationStatus struct {
+	TaskID       string `json:"task_id"`
+	CurrentStage StageName `json:"current_stage"`
+	Status       string `json:"status"`
+	CanApprove   bool   `json:"can_approve"`
+	CanReject    bool   `json:"can_reject"`
+	Approved     bool   `json:"approved"`
+	Rejected     bool   `json:"rejected"`
+	RejectReason string `json:"reject_reason,omitempty"`
+}
+
+// ApproveArchitecture 通过架构设计审核
+// 状态流转: architecture_review (pending/in_progress) -> implementation (pending)
+// 架构设计标记为 approved
+func (e *Engine) ApproveArchitecture(taskID string) (*TaskWorkflow, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	// 检查当前阶段是否为架构审核阶段
+	if workflow.CurrentStage != StageArchitectureReview {
+		return nil, fmt.Errorf("%w: current stage is %s, not architecture_review", ErrInvalidStage, workflow.CurrentStage)
+	}
+
+	archStage := workflow.Stages[StageArchitectureReview]
+	if archStage == nil {
+		return nil, ErrInvalidStage
+	}
+
+	// 检查架构审核阶段状态（必须是 pending 或 in_progress）
+	if archStage.Status != StatusPending && archStage.Status != StatusInProgress {
+		return nil, fmt.Errorf("%w: architecture_review stage status is %s", ErrInvalidTransition, archStage.Status)
+	}
+
+	now := time.Now()
+
+	// 标记架构审核阶段为完成
+	archStage.Status = StatusCompleted
+	archStage.CompletedAt = &now
+	archStage.UpdatedAt = &now
+
+	// 推进到实现阶段
+	implStage := workflow.Stages[StageImplementation]
+	if implStage != nil {
+		implStage.Status = StatusInProgress
+		implStage.StartedAt = &now
+		implStage.UpdatedAt = &now
+	}
+
+	// 更新当前阶段指针
+	workflow.CurrentStage = StageImplementation
+	workflow.UpdatedAt = now
+
+	// 标记架构审核通过
+	if workflow.Metadata == nil {
+		workflow.Metadata = make(map[string]string)
+	}
+	workflow.Metadata["architecture_status"] = "approved"
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow, nil
+}
+
+// RejectArchitecture 驳回架构设计审核
+// 状态流转: architecture_review (pending/in_progress) -> clarification (in_progress)
+// 记录驳回原因，触发重新澄清
+func (e *Engine) RejectArchitecture(taskID string, reason string) (*TaskWorkflow, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	// 检查当前阶段是否为架构审核阶段
+	if workflow.CurrentStage != StageArchitectureReview {
+		return nil, fmt.Errorf("%w: current stage is %s, not architecture_review", ErrInvalidStage, workflow.CurrentStage)
+	}
+
+	archStage := workflow.Stages[StageArchitectureReview]
+	if archStage == nil {
+		return nil, ErrInvalidStage
+	}
+
+	// 检查架构审核阶段状态（必须是 pending 或 in_progress）
+	if archStage.Status != StatusPending && archStage.Status != StatusInProgress {
+		return nil, fmt.Errorf("%w: architecture_review stage status is %s", ErrInvalidTransition, archStage.Status)
+	}
+
+	now := time.Now()
+
+	// 标记架构审核阶段为失败，记录驳回原因
+	archStage.Status = StatusFailed
+	archStage.Error = reason
+	archStage.UpdatedAt = &now
+
+	// 回退到澄清阶段进行中状态
+	clarificationStage := workflow.Stages[StageClarification]
+	if clarificationStage != nil {
+		clarificationStage.Status = StatusInProgress
+		clarificationStage.UpdatedAt = &now
+		// 重置轮次，准备重新澄清
+		clarificationStage.Round = 0
+	}
+
+	// 更新当前阶段指针回澄清阶段
+	workflow.CurrentStage = StageClarification
+	workflow.UpdatedAt = now
+
+	// 标记架构审核驳回
+	if workflow.Metadata == nil {
+		workflow.Metadata = make(map[string]string)
+	}
+	workflow.Metadata["architecture_status"] = "rejected"
+	workflow.Metadata["architecture_reject_reason"] = reason
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow, nil
+}
+
+// ArchitectureReviewStatus 架构审核状态
+type ArchitectureReviewStatus struct {
+	TaskID       string    `json:"task_id"`
+	CurrentStage StageName `json:"current_stage"`
+	Status       string    `json:"status"`
+	CanApprove   bool      `json:"can_approve"`
+	CanReject    bool      `json:"can_reject"`
+	Approved     bool      `json:"approved"`
+	Rejected     bool      `json:"rejected"`
+	RejectReason string    `json:"reject_reason,omitempty"`
+	NeedsAttention bool    `json:"needs_attention"`
+}
+
+// GetArchitectureReviewStatus 获取架构审核状态
+func (e *Engine) GetArchitectureReviewStatus(taskID string) (*ArchitectureReviewStatus, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	status := &ArchitectureReviewStatus{
+		TaskID:       taskID,
+		CurrentStage: workflow.CurrentStage,
+		Status:       "",
+		CanApprove:   false,
+		CanReject:    false,
+		Approved:     false,
+		Rejected:     false,
+		NeedsAttention: workflow.NeedsAttention,
+	}
+
+	// 检查架构审核阶段状态
+	archStage := workflow.Stages[StageArchitectureReview]
+	if archStage != nil {
+		status.Status = string(archStage.Status)
+
+		// 判断是否可以进行审核操作
+		if workflow.CurrentStage == StageArchitectureReview &&
+			(archStage.Status == StatusPending || archStage.Status == StatusInProgress) {
+			status.CanApprove = true
+			status.CanReject = true
+		}
+
+		// 判断已审核状态
+		if archStage.Status == StatusCompleted {
+			status.Approved = true
+		}
+		if archStage.Status == StatusFailed {
+			status.Rejected = true
+			status.RejectReason = archStage.Error
+		}
+	}
+
+	// 从 Metadata 获取额外信息
+	if workflow.Metadata != nil {
+		if v, ok := workflow.Metadata["architecture_status"]; ok {
+			if v == "approved" {
+				status.Approved = true
+			} else if v == "rejected" {
+				status.Rejected = true
+			}
+		}
+		if v, ok := workflow.Metadata["architecture_reject_reason"]; ok {
+			status.RejectReason = v
+		}
+	}
+
+	return status, nil
+}
+
+// CanApproveOrRejectArchitecture 判断是否可以进行架构审核操作
+func (e *Engine) CanApproveOrRejectArchitecture(taskID string) (bool, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return false, ErrWorkflowNotFound
+	}
+
+	// 必须在架构审核阶段
+	if workflow.CurrentStage != StageArchitectureReview {
+		return false, nil
+	}
+
+	archStage := workflow.Stages[StageArchitectureReview]
+	if archStage == nil {
+		return false, nil
+	}
+
+	// 架构审核阶段必须是 pending 或 in_progress
+	return archStage.Status == StatusPending || archStage.Status == StatusInProgress, nil
+}
+
+// SetArchitecturePaths 设置架构设计和TDD规则文件路径
+func (e *Engine) SetArchitecturePaths(taskID string, archPath string, tddPath string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return ErrWorkflowNotFound
+	}
+
+	now := time.Now()
+
+	if workflow.Metadata == nil {
+		workflow.Metadata = make(map[string]string)
+	}
+	workflow.Metadata["architecture_path"] = archPath
+	workflow.Metadata["tdd_path"] = tddPath
+	workflow.UpdatedAt = now
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return nil
+}
+
+// GetArchitecturePaths 获取架构设计和TDD规则文件路径
+func (e *Engine) GetArchitecturePaths(taskID string) (string, string, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return "", "", ErrWorkflowNotFound
+	}
+
+	if workflow.Metadata == nil {
+		return "", "", nil
+	}
+
+	return workflow.Metadata["architecture_path"], workflow.Metadata["tdd_path"], nil
+}
+// NeedsAttentionDetails 需要人工处理的详细信息
+type NeedsAttentionDetails struct {
+	FailedStage    string    `json:"failed_stage"`
+	FailedAt       time.Time `json:"failed_at"`
+	RetryCount     int       `json:"retry_count"`
+	MaxRetries     int       `json:"max_retries"`
+	ErrorType      string    `json:"error_type"`
+	ErrorMessage   string    `json:"error_message"`
+	LastLogSnippet string    `json:"last_log_snippet,omitempty"`
+	Suggestion     string    `json:"suggestion,omitempty"`
+}
+
+// TransitionToNeedsAttention 流转到待人工处理状态
+// 当任务执行失败且达到重试上限时调用
+func (e *Engine) TransitionToNeedsAttention(taskID string, details NeedsAttentionDetails) (*TaskWorkflow, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	now := time.Now()
+
+	// 记录失败阶段
+	workflow.FailedStage = StageName(details.FailedStage)
+	workflow.FailedAt = &now
+	workflow.FailureReason = details.ErrorMessage
+	workflow.RetryCount = details.RetryCount
+	workflow.MaxRetries = details.MaxRetries
+	workflow.NeedsAttention = true
+
+	// 更新失败阶段的状态
+	if failedStageName := StageName(details.FailedStage); failedStageName != "" {
+		if stage, ok := workflow.Stages[failedStageName]; ok {
+			stage.Status = StatusFailed
+			stage.Error = details.ErrorMessage
+			stage.RetryCount = details.RetryCount
+			stage.FailedAt = &now
+			stage.ErrorType = details.ErrorType
+			stage.ErrorMessage = details.ErrorMessage
+			stage.LastLogSnippet = details.LastLogSnippet
+			stage.Suggestion = details.Suggestion
+			stage.UpdatedAt = &now
+		}
+	}
+
+	// 流转到待人工处理阶段
+	workflow.CurrentStage = StageNeedsAttention
+	workflow.UpdatedAt = now
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow, nil
+}
+
+// ResumeTask 恢复任务执行
+// 用户手动修复后继续执行
+func (e *Engine) ResumeTask(taskID string) (*TaskWorkflow, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	// 检查当前是否处于待人工处理状态
+	if workflow.CurrentStage != StageNeedsAttention {
+		return nil, fmt.Errorf("%w: current stage is %s, not needs_attention", ErrInvalidTransition, workflow.CurrentStage)
+	}
+
+	now := time.Now()
+
+	// 清除人工处理标记
+	workflow.NeedsAttention = false
+	workflow.RetryCount = 0 // 重置重试计数器
+
+	// 恢复到失败的阶段重新执行
+	if workflow.FailedStage != "" {
+		workflow.CurrentStage = workflow.FailedStage
+		if stage, ok := workflow.Stages[workflow.FailedStage]; ok {
+			stage.Status = StatusInProgress
+			stage.StartedAt = &now
+			stage.UpdatedAt = &now
+			stage.Error = ""
+			stage.ErrorType = ""
+			stage.ErrorMessage = ""
+			stage.RetryCount = 0
+			stage.FailedAt = nil
+		}
+	}
+
+	workflow.UpdatedAt = now
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow, nil
+}
+
+// ReclarifyTask 重新澄清需求
+// 流转到需求澄清阶段，清除 BDD 和架构设计
+func (e *Engine) ReclarifyTask(taskID string) (*TaskWorkflow, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	// 检查当前是否处于待人工处理状态
+	if workflow.CurrentStage != StageNeedsAttention {
+		return nil, fmt.Errorf("%w: current stage is %s, not needs_attention", ErrInvalidTransition, workflow.CurrentStage)
+	}
+
+	now := time.Now()
+
+	// 清除人工处理标记和失败信息
+	workflow.NeedsAttention = false
+	workflow.FailedStage = ""
+	workflow.FailedAt = nil
+	workflow.FailureReason = ""
+	workflow.RetryCount = 0
+	workflow.IsIncomplete = false
+	workflow.IncompleteReason = ""
+
+	// 清除 BDD 约束路径
+	if workflow.Metadata != nil {
+		delete(workflow.Metadata, "bdd_constraints_path")
+	}
+
+	// 重置所有阶段状态
+	for _, name := range StageOrder {
+		if stage, ok := workflow.Stages[name]; ok {
+			stage.Status = StatusPending
+			stage.StartedAt = nil
+			stage.CompletedAt = nil
+			stage.UpdatedAt = &now
+			stage.Error = ""
+			stage.ErrorType = ""
+			stage.ErrorMessage = ""
+			stage.RetryCount = 0
+			stage.FailedAt = nil
+			stage.LastLogSnippet = ""
+			stage.Suggestion = ""
+			stage.Round = 0
+		}
+	}
+
+	// 流转到需求澄清阶段
+	workflow.CurrentStage = StageClarification
+	if stage, ok := workflow.Stages[StageClarification]; ok {
+		stage.Status = StatusInProgress
+		stage.StartedAt = &now
+		stage.UpdatedAt = &now
+	}
+
+	workflow.UpdatedAt = now
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow, nil
+}
+
+// AbandonTask 放弃任务
+// 流转到已取消状态
+func (e *Engine) AbandonTask(taskID string) (*TaskWorkflow, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	// 检查当前是否处于待人工处理状态
+	if workflow.CurrentStage != StageNeedsAttention {
+		return nil, fmt.Errorf("%w: current stage is %s, not needs_attention", ErrInvalidTransition, workflow.CurrentStage)
+	}
+
+	now := time.Now()
+
+	// 清除所有状态
+	workflow.NeedsAttention = false
+	workflow.FailedStage = ""
+	workflow.FailedAt = nil
+	workflow.FailureReason = ""
+	workflow.RetryCount = 0
+
+	// 流转到已取消阶段
+	workflow.CurrentStage = StageCancelled
+	workflow.UpdatedAt = now
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow, nil
+}
+
+// GetNeedsAttentionTasks 获取所有待人工处理的任务
+func (e *Engine) GetNeedsAttentionTasks() []*TaskWorkflow {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	result := make([]*TaskWorkflow, 0)
+	for _, wf := range e.workflows {
+		if wf.CurrentStage == StageNeedsAttention || wf.NeedsAttention {
+			result = append(result, wf)
+		}
+	}
+	return result
+}
+
+// GetFailureDetails 获取任务的失败详情
+func (e *Engine) GetFailureDetails(taskID string) (*NeedsAttentionDetails, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return nil, ErrWorkflowNotFound
+	}
+
+	if !workflow.NeedsAttention && workflow.CurrentStage != StageNeedsAttention {
+		return nil, fmt.Errorf("task is not in needs_attention state")
+	}
+
+	details := &NeedsAttentionDetails{
+		FailedStage:  string(workflow.FailedStage),
+		RetryCount:   workflow.RetryCount,
+		MaxRetries:   workflow.MaxRetries,
+		ErrorMessage: workflow.FailureReason,
+	}
+
+	if workflow.FailedAt != nil {
+		details.FailedAt = *workflow.FailedAt
+	}
+
+	// 从失败阶段获取更多详情
+	if workflow.FailedStage != "" {
+		if stage, ok := workflow.Stages[workflow.FailedStage]; ok {
+			details.ErrorType = stage.ErrorType
+			details.LastLogSnippet = stage.LastLogSnippet
+			details.Suggestion = stage.Suggestion
+		}
+	}
+
+	return details, nil
+}
+
+// IncrementRetryCount 增加重试计数
+func (e *Engine) IncrementRetryCount(taskID string) (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return 0, ErrWorkflowNotFound
+	}
+
+	now := time.Now()
+	workflow.RetryCount++
+	workflow.UpdatedAt = now
+
+	// 更新当前阶段的 retry count
+	if stage, ok := workflow.Stages[workflow.CurrentStage]; ok {
+		stage.RetryCount = workflow.RetryCount
+		stage.UpdatedAt = &now
+	}
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return workflow.RetryCount, nil
+}
+
+// SetMaxRetries 设置最大重试次数
+func (e *Engine) SetMaxRetries(taskID string, maxRetries int) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return ErrWorkflowNotFound
+	}
+
+	now := time.Now()
+	workflow.MaxRetries = maxRetries
+	workflow.UpdatedAt = now
+
+	// 持久化
+	if err := e.persist(); err != nil {
+		fmt.Printf("warning: failed to persist workflow: %v\n", err)
+	}
+
+	return nil
+}
+
+// HasReachedMaxRetries 检查是否达到最大重试次数
+func (e *Engine) HasReachedMaxRetries(taskID string) (bool, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	workflow, ok := e.workflows[taskID]
+	if !ok {
+		return false, ErrWorkflowNotFound
+	}
+
+	if workflow.MaxRetries <= 0 {
+		return false, nil // 无限制
+	}
+
+	return workflow.RetryCount >= workflow.MaxRetries, nil
+}

@@ -113,6 +113,62 @@ func (m *MockTracker) ListTasksByState(ctx context.Context, states []string) ([]
 	return nil, nil
 }
 
+func (m *MockTracker) GetBDDContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *MockTracker) UpdateBDDContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *MockTracker) ApproveBDD(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *MockTracker) RejectBDD(ctx context.Context, identifier string, reason string) error {
+	return nil
+}
+
+func (m *MockTracker) GetArchitectureContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *MockTracker) GetTDDContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *MockTracker) UpdateArchitectureContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *MockTracker) UpdateTDDContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *MockTracker) ApproveArchitecture(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *MockTracker) RejectArchitecture(ctx context.Context, identifier string, reason string) error {
+	return nil
+}
+
+func (m *MockTracker) GetVerificationReport(ctx context.Context, identifier string) (*tracker.VerificationReport, error) {
+	return nil, nil
+}
+
+func (m *MockTracker) UpdateVerificationReport(ctx context.Context, identifier string, report *tracker.VerificationReport) error {
+	return nil
+}
+
+func (m *MockTracker) ApproveVerification(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *MockTracker) RejectVerification(ctx context.Context, identifier string, reason string) error {
+	return nil
+}
+
 // TestNewClarificationManager 测试创建澄清管理器
 func TestNewClarificationManagerAgent(t *testing.T) {
 	engine := workflow.NewEngine()
@@ -540,11 +596,6 @@ func TestHandleUserResponseWithAgent(t *testing.T) {
 	}
 
 	_ = result // result may be nil if round limit reached
-}
-
-// Helper function
-func strPtr(s string) *string {
-	return &s
 }
 
 // Ensure MockTracker implements tracker.Tracker

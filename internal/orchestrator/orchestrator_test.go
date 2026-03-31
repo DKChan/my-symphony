@@ -2,11 +2,13 @@
 package orchestrator
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/dministrator/symphony/internal/config"
 	"github.com/dministrator/symphony/internal/domain"
+	"github.com/dministrator/symphony/internal/workflow"
 )
 
 // 辅助函数：创建测试用的问题
@@ -668,5 +670,338 @@ func TestCancelTask_EmptyState(t *testing.T) {
 	}
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestShouldTransitionToNeedsAttention 测试重试上限判断逻辑
+func TestShouldTransitionToNeedsAttention(t *testing.T) {
+	tests := []struct {
+		name         string
+		maxRetries   int
+		retryAttempt int
+		expected     bool
+	}{
+		{
+			name:         "below limit",
+			maxRetries:   3,
+			retryAttempt: 2,
+			expected:     false,
+		},
+		{
+			name:         "at limit",
+			maxRetries:   3,
+			retryAttempt: 3,
+			expected:     true,
+		},
+		{
+			name:         "above limit",
+			maxRetries:   3,
+			retryAttempt: 4,
+			expected:     true,
+		},
+		{
+			name:         "unlimited retries (maxRetries=0)",
+			maxRetries:   0,
+			retryAttempt: 10,
+			expected:     false,
+		},
+		{
+			name:         "negative maxRetries (unlimited)",
+			maxRetries:   -1,
+			retryAttempt: 5,
+			expected:     false,
+		},
+		{
+			name:         "maxRetries=1, attempt=1",
+			maxRetries:   1,
+			retryAttempt: 1,
+			expected:     true,
+		},
+		{
+			name:         "maxRetries=5, attempt=3",
+			maxRetries:   5,
+			retryAttempt: 3,
+			expected:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := createTestConfig()
+			cfg.Execution.MaxRetries = tt.maxRetries
+			orch := New(cfg, "test prompt")
+
+			result := orch.shouldTransitionToNeedsAttention(tt.retryAttempt)
+			if result != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestTransitionToNeedsAttentionLocked_WorflowNotFound 测试工作流不存在的情况
+func TestTransitionToNeedsAttentionLocked_WorkflowNotFound(t *testing.T) {
+	cfg := createTestConfig()
+	cfg.Execution.MaxRetries = 3
+	orch := New(cfg, "test prompt")
+
+	// 不初始化工作流，直接尝试流转
+	// 由于工作流不存在，应该记录错误但不崩溃
+	orch.transitionToNeedsAttentionLocked("non-existent-task", "TEST-1", 3, "test error")
+
+	// 验证没有崩溃，且状态正确
+	state := orch.GetState()
+	if len(state.Running) != 0 {
+		t.Error("expected no running tasks")
+	}
+}
+
+// TestTransitionToNeedsAttentionLocked_Success 测试成功流转到待人工处理状态
+func TestTransitionToNeedsAttentionLocked_Success(t *testing.T) {
+	cfg := createTestConfig()
+	cfg.Execution.MaxRetries = 3
+	orch := New(cfg, "test prompt")
+
+	taskID := "test-task-1"
+
+	// 初始化工作流
+	orch.InitTaskWorkflow(taskID)
+
+	// 记录状态变更回调
+	callbackCalled := false
+	orch.SetOnStateChange(func() {
+		callbackCalled = true
+	})
+
+	// 执行流转
+	orch.transitionToNeedsAttentionLocked(taskID, "TEST-1", 3, "execution failed")
+
+	// 等待异步操作完成
+	time.Sleep(100 * time.Millisecond)
+
+	// 验证工作流状态
+	workflow := orch.GetTaskWorkflow(taskID)
+	if workflow == nil {
+		t.Fatal("expected workflow to exist")
+	}
+
+	// 验证当前阶段
+	if workflow.CurrentStage != "needs_attention" {
+		t.Errorf("expected current stage 'needs_attention', got '%s'", workflow.CurrentStage)
+	}
+
+	// 验证 NeedsAttention 标记
+	if !workflow.NeedsAttention {
+		t.Error("expected NeedsAttention to be true")
+	}
+
+	// 验证失败信息
+	if workflow.FailureReason != "execution failed" {
+		t.Errorf("expected failure reason 'execution failed', got '%s'", workflow.FailureReason)
+	}
+
+	if workflow.RetryCount != 3 {
+		t.Errorf("expected retry count 3, got %d", workflow.RetryCount)
+	}
+
+	if workflow.MaxRetries != 3 {
+		t.Errorf("expected max retries 3, got %d", workflow.MaxRetries)
+	}
+
+	// 验证回调被调用
+	if !callbackCalled {
+		t.Error("expected state change callback to be called")
+	}
+}
+
+// TestOnWorkerExit_RetryNotAtLimit 测试未达重试上限时的正常重试
+func TestOnWorkerExit_RetryNotAtLimit(t *testing.T) {
+	cfg := createTestConfig()
+	cfg.Execution.MaxRetries = 3
+	orch := New(cfg, "test prompt")
+
+	taskID := "test-task-retry"
+	identifier := "TEST-RETRY"
+
+	// 初始化工作流
+	orch.InitTaskWorkflow(taskID)
+
+	// 模拟运行中状态
+	orch.GetState().Running[taskID] = &domain.RunningEntry{
+		Issue:      createTestIssue(taskID, identifier, "Test Task", "In Progress", 1, time.Now()),
+		Identifier: identifier,
+		StartedAt:  time.Now(),
+	}
+	orch.GetState().Claimed[taskID] = struct{}{}
+
+	// 模拟第一次失败（未达上限）
+	attempt := 1
+	testErr := fmt.Errorf("test error")
+	orch.onWorkerExit(taskID, identifier, testErr, &attempt)
+
+	// 验证任务被安排重试
+	state := orch.GetState()
+	if _, ok := state.RetryAttempts[taskID]; !ok {
+		t.Error("expected task to be in retry queue")
+	}
+
+	// 验证工作流状态不是 needs_attention
+	workflow := orch.GetTaskWorkflow(taskID)
+	if workflow.CurrentStage == "needs_attention" {
+		t.Error("expected task not to be in needs_attention state")
+	}
+}
+
+// TestOnWorkerExit_RetryAtLimit 测试达到重试上限时流转到待人工处理
+func TestOnWorkerExit_RetryAtLimit(t *testing.T) {
+	cfg := createTestConfig()
+	cfg.Execution.MaxRetries = 3
+	orch := New(cfg, "test prompt")
+
+	taskID := "test-task-limit"
+	identifier := "TEST-LIMIT"
+
+	// 初始化工作流
+	orch.InitTaskWorkflow(taskID)
+
+	// 模拟运行中状态
+	orch.GetState().Running[taskID] = &domain.RunningEntry{
+		Issue:      createTestIssue(taskID, identifier, "Test Task", "In Progress", 1, time.Now()),
+		Identifier: identifier,
+		StartedAt:  time.Now(),
+	}
+	orch.GetState().Claimed[taskID] = struct{}{}
+
+	// 记录状态变更回调
+	callbackCalled := false
+	orch.SetOnStateChange(func() {
+		callbackCalled = true
+	})
+
+	// 模拟第三次失败（达到上限）
+	attempt := 3
+	testErr := fmt.Errorf("persistent failure")
+	orch.onWorkerExit(taskID, identifier, testErr, &attempt)
+
+	// 等待异步操作完成
+	time.Sleep(100 * time.Millisecond)
+
+	// 验证任务不在重试队列
+	state := orch.GetState()
+	if _, ok := state.RetryAttempts[taskID]; ok {
+		t.Error("expected task not to be in retry queue")
+	}
+
+	// 验证工作流状态是 needs_attention
+	workflow := orch.GetTaskWorkflow(taskID)
+	if workflow == nil {
+		t.Fatal("expected workflow to exist")
+	}
+
+	if workflow.CurrentStage != "needs_attention" {
+		t.Errorf("expected current stage 'needs_attention', got '%s'", workflow.CurrentStage)
+	}
+
+	if !workflow.NeedsAttention {
+		t.Error("expected NeedsAttention to be true")
+	}
+
+	// 验证回调被调用
+	if !callbackCalled {
+		t.Error("expected state change callback to be called")
+	}
+}
+
+// TestOnWorkerExit_NoError 测试成功退出时不会触发流转
+func TestOnWorkerExit_NoError(t *testing.T) {
+	cfg := createTestConfig()
+	cfg.Execution.MaxRetries = 3
+	orch := New(cfg, "test prompt")
+
+	taskID := "test-task-success"
+	identifier := "TEST-SUCCESS"
+
+	// 初始化工作流
+	orch.InitTaskWorkflow(taskID)
+
+	// 模拟运行中状态
+	orch.GetState().Running[taskID] = &domain.RunningEntry{
+		Issue:      createTestIssue(taskID, identifier, "Test Task", "In Progress", 1, time.Now()),
+		Identifier: identifier,
+		StartedAt:  time.Now(),
+	}
+	orch.GetState().Claimed[taskID] = struct{}{}
+
+	// 成功退出（无错误）
+	orch.onWorkerExit(taskID, identifier, nil, nil)
+
+	// 验证任务不在重试队列
+	state := orch.GetState()
+	if _, ok := state.RetryAttempts[taskID]; ok {
+		t.Error("expected task not to be in retry queue")
+	}
+
+	// 验证工作流状态不是 needs_attention
+	workflow := orch.GetTaskWorkflow(taskID)
+	if workflow.CurrentStage == "needs_attention" {
+		t.Error("expected task not to be in needs_attention state")
+	}
+}
+
+// TestNeedsAttentionDetails 测试失败详情结构体
+func TestNeedsAttentionDetails(t *testing.T) {
+	now := time.Now()
+	details := workflow.NeedsAttentionDetails{
+		FailedStage:    "implementation",
+		FailedAt:       now,
+		RetryCount:     3,
+		MaxRetries:     3,
+		ErrorType:      "execution_failure",
+		ErrorMessage:   "test error message",
+		LastLogSnippet: "last log line",
+		Suggestion:     "check the error",
+	}
+
+	if details.FailedStage != "implementation" {
+		t.Errorf("expected failed stage 'implementation', got '%s'", details.FailedStage)
+	}
+
+	if details.RetryCount != 3 {
+		t.Errorf("expected retry count 3, got %d", details.RetryCount)
+	}
+
+	if details.ErrorType != "execution_failure" {
+		t.Errorf("expected error type 'execution_failure', got '%s'", details.ErrorType)
+	}
+}
+
+// TestGetNeedsAttentionTasks 测试获取待人工处理任务列表
+func TestGetNeedsAttentionTasks(t *testing.T) {
+	cfg := createTestConfig()
+	cfg.Execution.MaxRetries = 3
+	orch := New(cfg, "test prompt")
+
+	// 初始应该为空
+	tasks := orch.GetWorkflowEngine().GetNeedsAttentionTasks()
+	if len(tasks) != 0 {
+		t.Errorf("expected 0 needs_attention tasks, got %d", len(tasks))
+	}
+
+	// 添加一个待人工处理的任务
+	taskID := "needs-attention-1"
+	orch.InitTaskWorkflow(taskID)
+	orch.transitionToNeedsAttentionLocked(taskID, "TEST-NA", 3, "test error")
+
+	// 等待异步操作完成
+	time.Sleep(100 * time.Millisecond)
+
+	// 验证列表包含该任务
+	tasks = orch.GetWorkflowEngine().GetNeedsAttentionTasks()
+	if len(tasks) != 1 {
+		t.Errorf("expected 1 needs_attention task, got %d", len(tasks))
+	}
+
+	if tasks[0].TaskID != taskID {
+		t.Errorf("expected task ID '%s', got '%s'", taskID, tasks[0].TaskID)
 	}
 }

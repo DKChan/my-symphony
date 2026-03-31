@@ -8,6 +8,7 @@ import (
 
 	"github.com/dministrator/symphony/internal/config"
 	"github.com/dministrator/symphony/internal/domain"
+	"github.com/dministrator/symphony/internal/tracker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -92,6 +93,62 @@ func (m *mockRecoveryTracker) GetConversationHistory(ctx context.Context, identi
 
 func (m *mockRecoveryTracker) ListTasksByState(ctx context.Context, states []string) ([]*domain.Issue, error) {
 	return m.FetchIssuesByStates(ctx, states)
+}
+
+func (m *mockRecoveryTracker) GetBDDContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *mockRecoveryTracker) UpdateBDDContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) ApproveBDD(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) RejectBDD(ctx context.Context, identifier string, reason string) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) GetArchitectureContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *mockRecoveryTracker) GetTDDContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *mockRecoveryTracker) UpdateArchitectureContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) UpdateTDDContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) ApproveArchitecture(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) RejectArchitecture(ctx context.Context, identifier string, reason string) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) GetVerificationReport(ctx context.Context, identifier string) (*tracker.VerificationReport, error) {
+	return nil, nil
+}
+
+func (m *mockRecoveryTracker) UpdateVerificationReport(ctx context.Context, identifier string, report *tracker.VerificationReport) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) ApproveVerification(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *mockRecoveryTracker) RejectVerification(ctx context.Context, identifier string, reason string) error {
+	return nil
 }
 
 func (m *mockRecoveryTracker) addIssue(issue *domain.Issue) {

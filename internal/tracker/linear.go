@@ -672,3 +672,381 @@ func (c *LinearClient) RejectBDD(ctx context.Context, identifier string, reason 
 
 	return nil
 }
+
+// GetVerificationReport 获取任务的验收报告内容
+func (c *LinearClient) GetVerificationReport(ctx context.Context, identifier string) (*VerificationReport, error) {
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return nil, err
+	}
+
+	return &VerificationReport{
+		TaskID:         issue.ID,
+		TaskIdentifier: issue.Identifier,
+		TaskTitle:      issue.Title,
+		GeneratedAt:    time.Now(),
+	}, nil
+}
+
+// UpdateVerificationReport 更新任务的验收报告
+func (c *LinearClient) UpdateVerificationReport(ctx context.Context, identifier string, report *VerificationReport) error {
+	// 简化实现
+	return nil
+}
+
+// ApproveVerification 通过验收
+func (c *LinearClient) ApproveVerification(ctx context.Context, identifier string) error {
+	query := `
+			mutation($id: String!, $input: IssueUpdateInput!) {
+				issueUpdate(id: $id, input: $input) {
+					success
+				}
+			}
+		`
+
+	variables := map[string]any{
+		"id": identifier,
+		"input": map[string]any{
+			"labelIds": []string{"verification-approved"},
+		},
+	}
+
+	var resp struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+
+	if err := c.doRequest(ctx, query, variables, &resp); err != nil {
+		return fmt.Errorf("approve verification failed: %w", err)
+	}
+
+	return nil
+}
+
+// RejectVerification 驳回验收（流转回实现中）
+func (c *LinearClient) RejectVerification(ctx context.Context, identifier string, reason string) error {
+	query := `
+			mutation($id: String!, $input: IssueUpdateInput!) {
+				issueUpdate(id: $id, input: $input) {
+					success
+				}
+			}
+		`
+
+	variables := map[string]any{
+		"id": identifier,
+		"input": map[string]any{
+			"labelIds": []string{"verification-rejected"},
+		},
+	}
+
+	var resp struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+
+	if err := c.doRequest(ctx, query, variables, &resp); err != nil {
+		return fmt.Errorf("reject verification failed: %w", err)
+	}
+
+	// 添加驳回原因评论
+	commentQuery := `
+			mutation($input: CommentCreateInput!) {
+				commentCreate(input: $input) {
+					comment {
+						id
+					}
+				}
+			}
+		`
+
+	commentVariables := map[string]any{
+		"input": map[string]any{
+			"issueId": identifier,
+			"body":    fmt.Sprintf("**验收驳回原因**: %s", reason),
+		},
+	}
+
+	var commentResp struct {
+		CommentCreate struct {
+			Comment struct {
+				ID string `json:"id"`
+			} `json:"comment"`
+		} `json:"commentCreate"`
+	}
+
+	if err := c.doRequest(ctx, commentQuery, commentVariables, &commentResp); err != nil {
+		return fmt.Errorf("add reject comment failed: %w", err)
+	}
+
+	return nil
+}
+// GetArchitectureContent 获取任务的架构设计内容
+// Linear 通过 issue description 或 custom field 存储架构内容
+func (c *LinearClient) GetArchitectureContent(ctx context.Context, identifier string) (string, error) {
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return "", err
+	}
+
+	if issue.Description == nil {
+		return "", fmt.Errorf("no architecture content found for issue: %s", identifier)
+	}
+
+	// 查找架构标记之间的内容
+	body := *issue.Description
+	startMarker := "<!-- ARCHITECTURE_START -->"
+	endMarker := "<!-- ARCHITECTURE_END -->"
+
+	startIdx := strings.Index(body, startMarker)
+	endIdx := strings.Index(body, endMarker)
+
+	if startIdx == -1 || endIdx == -1 || startIdx >= endIdx {
+		// 如果没有标记，返回整个描述作为架构内容
+		return body, nil
+	}
+
+	return body[startIdx+len(startMarker) : endIdx], nil
+}
+
+// UpdateArchitectureContent 更新任务的架构设计内容
+func (c *LinearClient) UpdateArchitectureContent(ctx context.Context, identifier string, content string) error {
+	// 获取当前 issue
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return err
+	}
+
+	body := ""
+	if issue.Description != nil {
+		body = *issue.Description
+	}
+
+	// 替换或追加架构内容
+	startMarker := "<!-- ARCHITECTURE_START -->"
+	endMarker := "<!-- ARCHITECTURE_END -->"
+	archSection := startMarker + "\n" + content + "\n" + endMarker
+
+	startIdx := strings.Index(body, startMarker)
+	endIdx := strings.Index(body, endMarker)
+
+	if startIdx != -1 && endIdx != -1 && startIdx < endIdx {
+		// 替换现有架构内容
+		body = body[:startIdx] + archSection + body[endIdx+len(endMarker):]
+	} else {
+		// 追加架构内容
+		if body != "" && !strings.HasSuffix(body, "\n") {
+			body += "\n\n"
+		}
+		body += archSection
+	}
+
+	// 更新 issue
+	query := `
+		mutation($id: String!, $input: IssueUpdateInput!) {
+			issueUpdate(id: $id, input: $input) {
+				success
+			}
+		}
+	`
+
+	variables := map[string]any{
+		"id": identifier,
+		"input": map[string]any{
+			"description": body,
+		},
+	}
+
+	var resp struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+
+	if err := c.doRequest(ctx, query, variables, &resp); err != nil {
+		return fmt.Errorf("update architecture content failed: %w", err)
+	}
+
+	return nil
+}
+
+// GetTDDContent 获取任务的 TDD 规则内容
+// Linear 通过 issue description 或 custom field 存储 TDD 内容
+func (c *LinearClient) GetTDDContent(ctx context.Context, identifier string) (string, error) {
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return "", err
+	}
+
+	if issue.Description == nil {
+		return "", fmt.Errorf("no TDD content found for issue: %s", identifier)
+	}
+
+	// 查找 TDD 标记之间的内容
+	body := *issue.Description
+	startMarker := "<!-- TDD_START -->"
+	endMarker := "<!-- TDD_END -->"
+
+	startIdx := strings.Index(body, startMarker)
+	endIdx := strings.Index(body, endMarker)
+
+	if startIdx == -1 || endIdx == -1 || startIdx >= endIdx {
+		// 如果没有标记，返回整个描述作为 TDD 内容
+		return body, nil
+	}
+
+	return body[startIdx+len(startMarker) : endIdx], nil
+}
+
+// UpdateTDDContent 更新任务的 TDD 规则内容
+func (c *LinearClient) UpdateTDDContent(ctx context.Context, identifier string, content string) error {
+	// 获取当前 issue
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return err
+	}
+
+	body := ""
+	if issue.Description != nil {
+		body = *issue.Description
+	}
+
+	// 替换或追加 TDD 内容
+	startMarker := "<!-- TDD_START -->"
+	endMarker := "<!-- TDD_END -->"
+	tddSection := startMarker + "\n" + content + "\n" + endMarker
+
+	startIdx := strings.Index(body, startMarker)
+	endIdx := strings.Index(body, endMarker)
+
+	if startIdx != -1 && endIdx != -1 && startIdx < endIdx {
+		// 替换现有 TDD 内容
+		body = body[:startIdx] + tddSection + body[endIdx+len(endMarker):]
+	} else {
+		// 追加 TDD 内容
+		if body != "" && !strings.HasSuffix(body, "\n") {
+			body += "\n\n"
+		}
+		body += tddSection
+	}
+
+	// 更新 issue
+	query := `
+		mutation($id: String!, $input: IssueUpdateInput!) {
+			issueUpdate(id: $id, input: $input) {
+				success
+			}
+		}
+	`
+
+	variables := map[string]any{
+		"id": identifier,
+		"input": map[string]any{
+			"description": body,
+		},
+	}
+
+	var resp struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+
+	if err := c.doRequest(ctx, query, variables, &resp); err != nil {
+		return fmt.Errorf("update TDD content failed: %w", err)
+	}
+
+	return nil
+}
+
+// ApproveArchitecture 通过架构审核
+func (c *LinearClient) ApproveArchitecture(ctx context.Context, identifier string) error {
+	query := `
+		mutation($id: String!, $input: IssueUpdateInput!) {
+			issueUpdate(id: $id, input: $input) {
+				success
+			}
+		}
+	`
+
+	variables := map[string]any{
+		"id": identifier,
+		"input": map[string]any{
+			"labelIds": []string{"architecture-approved"},
+		},
+	}
+
+	var resp struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+
+	if err := c.doRequest(ctx, query, variables, &resp); err != nil {
+		return fmt.Errorf("approve architecture failed: %w", err)
+	}
+
+	return nil
+}
+
+// RejectArchitecture 驳回架构审核
+func (c *LinearClient) RejectArchitecture(ctx context.Context, identifier string, reason string) error {
+	query := `
+		mutation($id: String!, $input: IssueUpdateInput!) {
+			issueUpdate(id: $id, input: $input) {
+				success
+			}
+		}
+	`
+
+	variables := map[string]any{
+		"id": identifier,
+		"input": map[string]any{
+			"labelIds": []string{"architecture-rejected"},
+		},
+	}
+
+	var resp struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+
+	if err := c.doRequest(ctx, query, variables, &resp); err != nil {
+		return fmt.Errorf("reject architecture failed: %w", err)
+	}
+
+	// 添加驳回原因评论
+	commentQuery := `
+		mutation($input: CommentCreateInput!) {
+			commentCreate(input: $input) {
+				comment {
+					id
+				}
+			}
+		}
+	`
+
+	commentVariables := map[string]any{
+		"input": map[string]any{
+			"issueId": identifier,
+			"body":    fmt.Sprintf("**架构审核驳回原因**: %s", reason),
+		},
+	}
+
+	var commentResp struct {
+		CommentCreate struct {
+			Comment struct {
+				ID string `json:"id"`
+			} `json:"comment"`
+		} `json:"commentCreate"`
+	}
+
+	if err := c.doRequest(ctx, commentQuery, commentVariables, &commentResp); err != nil {
+		return fmt.Errorf("add reject comment failed: %w", err)
+	}
+
+	return nil
+}

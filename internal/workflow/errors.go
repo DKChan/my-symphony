@@ -34,4 +34,22 @@ var (
 	ErrBDDFileNotFound = errors.New("bdd file not found")
 	// ErrBDDGenerationFailed BDD生成失败错误
 	ErrBDDGenerationFailed = errors.New("bdd generation failed")
+	// ErrInvalidTask 无效任务错误
+	ErrInvalidTask = errors.New("invalid task")
+	// ErrInvalidArchitecture 无效的架构设计错误
+	ErrInvalidArchitecture = errors.New("invalid architecture design")
+	// ErrArchitectureFileNotFound 架构设计文件未找到错误
+	ErrArchitectureFileNotFound = errors.New("architecture file not found")
+	// ErrInvalidTDDRules 无效的TDD规则错误
+	ErrInvalidTDDRules = errors.New("invalid tdd rules")
+	// ErrTDDFileNotFound TDD规则文件未找到错误
+	ErrTDDFileNotFound = errors.New("tdd file not found")
+	// ErrArchitectureGenerationFailed 架构设计生成失败错误
+	ErrArchitectureGenerationFailed = errors.New("architecture generation failed")
+	// ErrNotInArchitectureReviewStage 不在架构审核阶段错误
+	ErrNotInArchitectureReviewStage = errors.New("not in architecture_review stage")
+	// ErrArchitectureReviewAlreadyApproved 架构审核已通过错误
+	ErrArchitectureReviewAlreadyApproved = errors.New("architecture review already approved")
+	// ErrArchitectureReviewAlreadyRejected 架构审核已驳回错误
+	ErrArchitectureReviewAlreadyRejected = errors.New("architecture review already rejected")
 )

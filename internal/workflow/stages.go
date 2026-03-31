@@ -21,6 +21,10 @@ const (
 	StageImplementation StageName = "implementation"
 	// StageVerification 验证阶段
 	StageVerification StageName = "verification"
+	// StageNeedsAttention 待人工处理阶段
+	StageNeedsAttention StageName = "needs_attention"
+	// StageCancelled 已取消阶段
+	StageCancelled StageName = "cancelled"
 )
 
 // StageStatus 阶段状态
@@ -46,6 +50,12 @@ var StageOrder = []StageName{
 	StageVerification,
 }
 
+// TerminalStages 终态阶段列表
+var TerminalStages = []StageName{
+	StageNeedsAttention,
+	StageCancelled,
+}
+
 // StageState 阶段状态
 type StageState struct {
 	// Name 阶段名称
@@ -62,6 +72,18 @@ type StageState struct {
 	Round int `json:"round,omitempty"`
 	// Error 失败时的错误信息
 	Error string `json:"error,omitempty"`
+	// RetryCount 重试次数
+	RetryCount int `json:"retry_count,omitempty"`
+	// FailedAt 失败时间
+	FailedAt *time.Time `json:"failed_at,omitempty"`
+	// ErrorType 错误类型
+	ErrorType string `json:"error_type,omitempty"`
+	// ErrorMessage 错误消息
+	ErrorMessage string `json:"error_message,omitempty"`
+	// LastLogSnippet 最后的日志片段
+	LastLogSnippet string `json:"last_log_snippet,omitempty"`
+	// Suggestion 修复建议
+	Suggestion string `json:"suggestion,omitempty"`
 }
 
 // IsTerminal 判断阶段是否处于终态
@@ -89,6 +111,20 @@ type TaskWorkflow struct {
 	NeedsAttention bool `json:"needs_attention"`
 	// Metadata 扩展元数据（用于存储 BDD 约束路径等）
 	Metadata map[string]string `json:"metadata,omitempty"`
+	// RetryCount 当前重试次数
+	RetryCount int `json:"retry_count,omitempty"`
+	// MaxRetries 最大重试次数
+	MaxRetries int `json:"max_retries,omitempty"`
+	// FailedStage 失败的阶段
+	FailedStage StageName `json:"failed_stage,omitempty"`
+	// FailureReason 失败原因
+	FailureReason string `json:"failure_reason,omitempty"`
+	// FailedAt 失败时间
+	FailedAt *time.Time `json:"failed_at,omitempty"`
+	// Identifier 任务标识符
+	Identifier string `json:"identifier,omitempty"`
+	// Title 任务标题
+	Title string `json:"title,omitempty"`
 }
 
 // GetStage 获取指定阶段的状态
@@ -448,6 +484,10 @@ func GetStageDisplayName(stage StageName) string {
 		return "实现"
 	case StageVerification:
 		return "验证"
+	case StageNeedsAttention:
+		return "待人工处理"
+	case StageCancelled:
+		return "已取消"
 	default:
 		return string(stage)
 	}

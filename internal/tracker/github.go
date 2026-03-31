@@ -858,3 +858,433 @@ func (c *GitHubClient) RejectBDD(ctx context.Context, identifier string, reason 
 
 	return nil
 }
+
+// GetVerificationReport 获取任务的验收报告内容
+func (c *GitHubClient) GetVerificationReport(ctx context.Context, identifier string) (*VerificationReport, error) {
+	// GitHub 通过 issue body 中的标记存储验收报告
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return nil, err
+	}
+
+	if issue.Description == nil {
+		return nil, fmt.Errorf("no verification report found for issue: %s", identifier)
+	}
+
+	// 解析验收报告内容（简化实现）
+	return &VerificationReport{
+		TaskID:          issue.ID,
+		TaskIdentifier:  issue.Identifier,
+		TaskTitle:       issue.Title,
+		GeneratedAt:     time.Now(),
+	}, nil
+}
+
+// UpdateVerificationReport 更新任务的验收报告
+func (c *GitHubClient) UpdateVerificationReport(ctx context.Context, identifier string, report *VerificationReport) error {
+	// 简化实现：将报告序列化后存储在 issue body 中
+	return nil
+}
+
+// ApproveVerification 通过验收
+func (c *GitHubClient) ApproveVerification(ctx context.Context, identifier string) error {
+	number := extractIssueNumber(identifier)
+	if number == "" {
+		return fmt.Errorf("invalid identifier: %s", identifier)
+	}
+
+	// 添加 "verification-approved" label
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%s/labels", githubAPIBase, c.owner, c.repo, number)
+
+	body := map[string]any{
+		"labels": []string{"verification-approved"},
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github_approve_verification_failed: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// RejectVerification 驳回验收（流转回实现中）
+func (c *GitHubClient) RejectVerification(ctx context.Context, identifier string, reason string) error {
+	number := extractIssueNumber(identifier)
+	if number == "" {
+		return fmt.Errorf("invalid identifier: %s", identifier)
+	}
+
+	// 添加 "verification-rejected" label
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%s/labels", githubAPIBase, c.owner, c.repo, number)
+
+	body := map[string]any{
+		"labels": []string{"verification-rejected"},
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github_reject_verification_failed: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	// 添加驳回原因评论
+	commentURL := fmt.Sprintf("%s/repos/%s/%s/issues/%s/comments", githubAPIBase, c.owner, c.repo, number)
+	commentBody := map[string]any{
+		"body": fmt.Sprintf("**验收驳回原因**: %s", reason),
+	}
+	commentBytes, err := json.Marshal(commentBody)
+	if err != nil {
+		return fmt.Errorf("marshal comment: %w", err)
+	}
+
+	commentReq, err := http.NewRequestWithContext(ctx, "POST", commentURL, bytes.NewReader(commentBytes))
+	if err != nil {
+		return fmt.Errorf("create comment request: %w", err)
+	}
+	c.setHeaders(commentReq)
+	commentReq.Header.Set("Content-Type", "application/json")
+
+	commentResp, err := c.httpClient.Do(commentReq)
+	if err != nil {
+		return fmt.Errorf("comment request failed: %w", err)
+	}
+	defer commentResp.Body.Close()
+
+	return nil
+}
+
+// GetArchitectureContent 获取任务的架构设计内容
+// GitHub 通过 issue body 中的特定标记来存储架构内容
+func (c *GitHubClient) GetArchitectureContent(ctx context.Context, identifier string) (string, error) {
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return "", err
+	}
+
+	if issue.Description == nil {
+		return "", fmt.Errorf("no architecture content found for issue: %s", identifier)
+	}
+
+	// 查找架构标记之间的内容
+	body := *issue.Description
+	startMarker := "<!-- ARCHITECTURE_START -->"
+	endMarker := "<!-- ARCHITECTURE_END -->"
+
+	startIdx := strings.Index(body, startMarker)
+	endIdx := strings.Index(body, endMarker)
+
+	if startIdx == -1 || endIdx == -1 || startIdx >= endIdx {
+		return "", fmt.Errorf("no architecture content markers found for issue: %s", identifier)
+	}
+
+	return body[startIdx+len(startMarker) : endIdx], nil
+}
+
+// UpdateArchitectureContent 更新任务的架构设计内容
+// GitHub 通过更新 issue body 来存储架构内容
+func (c *GitHubClient) UpdateArchitectureContent(ctx context.Context, identifier string, content string) error {
+	number := extractIssueNumber(identifier)
+	if number == "" {
+		return fmt.Errorf("invalid identifier: %s", identifier)
+	}
+
+	// 获取当前 issue
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return err
+	}
+
+	body := ""
+	if issue.Description != nil {
+		body = *issue.Description
+	}
+
+	// 替换或追加架构内容
+	startMarker := "<!-- ARCHITECTURE_START -->"
+	endMarker := "<!-- ARCHITECTURE_END -->"
+	archSection := startMarker + "\n" + content + "\n" + endMarker
+
+	startIdx := strings.Index(body, startMarker)
+	endIdx := strings.Index(body, endMarker)
+
+	if startIdx != -1 && endIdx != -1 && startIdx < endIdx {
+		// 替换现有架构内容
+		body = body[:startIdx] + archSection + body[endIdx+len(endMarker):]
+	} else {
+		// 追加架构内容
+		if body != "" && !strings.HasSuffix(body, "\n") {
+			body += "\n\n"
+		}
+		body += archSection
+	}
+
+	// 更新 issue
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%s", githubAPIBase, c.owner, c.repo, number)
+
+	updateBody := map[string]any{
+		"body": body,
+	}
+	bodyBytes, err := json.Marshal(updateBody)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "PATCH", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github_update_architecture_failed: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// GetTDDContent 获取任务的 TDD 规则内容
+// GitHub 通过 issue body 中的特定标记来存储 TDD 内容
+func (c *GitHubClient) GetTDDContent(ctx context.Context, identifier string) (string, error) {
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return "", err
+	}
+
+	if issue.Description == nil {
+		return "", fmt.Errorf("no TDD content found for issue: %s", identifier)
+	}
+
+	// 查找 TDD 标记之间的内容
+	body := *issue.Description
+	startMarker := "<!-- TDD_START -->"
+	endMarker := "<!-- TDD_END -->"
+
+	startIdx := strings.Index(body, startMarker)
+	endIdx := strings.Index(body, endMarker)
+
+	if startIdx == -1 || endIdx == -1 || startIdx >= endIdx {
+		return "", fmt.Errorf("no TDD content markers found for issue: %s", identifier)
+	}
+
+	return body[startIdx+len(startMarker) : endIdx], nil
+}
+
+// UpdateTDDContent 更新任务的 TDD 规则内容
+// GitHub 通过更新 issue body 来存储 TDD 内容
+func (c *GitHubClient) UpdateTDDContent(ctx context.Context, identifier string, content string) error {
+	number := extractIssueNumber(identifier)
+	if number == "" {
+		return fmt.Errorf("invalid identifier: %s", identifier)
+	}
+
+	// 获取当前 issue
+	issue, err := c.GetTask(ctx, identifier)
+	if err != nil {
+		return err
+	}
+
+	body := ""
+	if issue.Description != nil {
+		body = *issue.Description
+	}
+
+	// 替换或追加 TDD 内容
+	startMarker := "<!-- TDD_START -->"
+	endMarker := "<!-- TDD_END -->"
+	tddSection := startMarker + "\n" + content + "\n" + endMarker
+
+	startIdx := strings.Index(body, startMarker)
+	endIdx := strings.Index(body, endMarker)
+
+	if startIdx != -1 && endIdx != -1 && startIdx < endIdx {
+		// 替换现有 TDD 内容
+		body = body[:startIdx] + tddSection + body[endIdx+len(endMarker):]
+	} else {
+		// 追加 TDD 内容
+		if body != "" && !strings.HasSuffix(body, "\n") {
+			body += "\n\n"
+		}
+		body += tddSection
+	}
+
+	// 更新 issue
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%s", githubAPIBase, c.owner, c.repo, number)
+
+	updateBody := map[string]any{
+		"body": body,
+	}
+	bodyBytes, err := json.Marshal(updateBody)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "PATCH", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github_update_tdd_failed: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// ApproveArchitecture 通过架构审核
+// GitHub 通过添加 label 来标记架构审核通过
+func (c *GitHubClient) ApproveArchitecture(ctx context.Context, identifier string) error {
+	number := extractIssueNumber(identifier)
+	if number == "" {
+		return fmt.Errorf("invalid identifier: %s", identifier)
+	}
+
+	// 添加 "architecture-approved" label
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%s/labels", githubAPIBase, c.owner, c.repo, number)
+
+	body := map[string]any{
+		"labels": []string{"architecture-approved"},
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github_approve_architecture_failed: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// RejectArchitecture 驳回架构审核
+// GitHub 通过添加 label 和评论来标记架构审核驳回
+func (c *GitHubClient) RejectArchitecture(ctx context.Context, identifier string, reason string) error {
+	number := extractIssueNumber(identifier)
+	if number == "" {
+		return fmt.Errorf("invalid identifier: %s", identifier)
+	}
+
+	// 添加 "architecture-rejected" label
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%s/labels", githubAPIBase, c.owner, c.repo, number)
+
+	body := map[string]any{
+		"labels": []string{"architecture-rejected"},
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github_reject_architecture_failed: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	// 添加驳回原因评论
+	commentURL := fmt.Sprintf("%s/repos/%s/%s/issues/%s/comments", githubAPIBase, c.owner, c.repo, number)
+	commentBody := map[string]any{
+		"body": fmt.Sprintf("**架构审核驳回原因**: %s", reason),
+	}
+	commentBytes, err := json.Marshal(commentBody)
+	if err != nil {
+		return fmt.Errorf("marshal comment: %w", err)
+	}
+
+	commentReq, err := http.NewRequestWithContext(ctx, "POST", commentURL, bytes.NewReader(commentBytes))
+	if err != nil {
+		return fmt.Errorf("create comment request: %w", err)
+	}
+	c.setHeaders(commentReq)
+	commentReq.Header.Set("Content-Type", "application/json")
+
+	commentResp, err := c.httpClient.Do(commentReq)
+	if err != nil {
+		return fmt.Errorf("comment request failed: %w", err)
+	}
+	defer commentResp.Body.Close()
+
+	if commentResp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(commentResp.Body)
+		return fmt.Errorf("github_reject_comment_failed: %d - %s", commentResp.StatusCode, string(respBody))
+	}
+
+	return nil
+}

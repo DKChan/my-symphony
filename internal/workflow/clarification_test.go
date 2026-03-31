@@ -8,6 +8,7 @@ import (
 
 	"github.com/dministrator/symphony/internal/config"
 	"github.com/dministrator/symphony/internal/domain"
+	"github.com/dministrator/symphony/internal/tracker"
 	"github.com/dministrator/symphony/internal/workflow"
 )
 
@@ -709,6 +710,62 @@ func (m *MockClarificationTracker) GetConversationHistory(ctx context.Context, i
 
 func (m *MockClarificationTracker) ListTasksByState(ctx context.Context, states []string) ([]*domain.Issue, error) {
 	return nil, nil
+}
+
+func (m *MockClarificationTracker) GetBDDContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *MockClarificationTracker) UpdateBDDContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) ApproveBDD(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) RejectBDD(ctx context.Context, identifier string, reason string) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) GetArchitectureContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *MockClarificationTracker) GetTDDContent(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
+func (m *MockClarificationTracker) UpdateArchitectureContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) UpdateTDDContent(ctx context.Context, identifier string, content string) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) ApproveArchitecture(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) RejectArchitecture(ctx context.Context, identifier string, reason string) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) GetVerificationReport(ctx context.Context, identifier string) (*tracker.VerificationReport, error) {
+	return nil, nil
+}
+
+func (m *MockClarificationTracker) UpdateVerificationReport(ctx context.Context, identifier string, report *tracker.VerificationReport) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) ApproveVerification(ctx context.Context, identifier string) error {
+	return nil
+}
+
+func (m *MockClarificationTracker) RejectVerification(ctx context.Context, identifier string, reason string) error {
+	return nil
 }
 
 func (m *MockClarificationTracker) AddTask(identifier, id, title string) {

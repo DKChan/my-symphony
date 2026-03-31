@@ -8,6 +8,9 @@ import (
 	"github.com/dministrator/symphony/internal/domain"
 )
 
+// VerificationReport 验收报告类型别名
+type VerificationReport = domain.VerificationReport
+
 // Tracker 问题跟踪器接口
 type Tracker interface {
 	// FetchCandidateIssues 获取处于活跃状态的候选问题
@@ -57,6 +60,36 @@ type Tracker interface {
 
 	// RejectBDD 驳回 BDD 审核（附带驳回原因）
 	RejectBDD(ctx context.Context, identifier string, reason string) error
+
+	// GetArchitectureContent 获取任务的架构设计内容
+	GetArchitectureContent(ctx context.Context, identifier string) (string, error)
+
+	// GetTDDContent 获取任务的 TDD 规则内容
+	GetTDDContent(ctx context.Context, identifier string) (string, error)
+
+	// UpdateArchitectureContent 更新任务的架构设计内容
+	UpdateArchitectureContent(ctx context.Context, identifier string, content string) error
+
+	// UpdateTDDContent 更新任务的 TDD 规则内容
+	UpdateTDDContent(ctx context.Context, identifier string, content string) error
+
+	// ApproveArchitecture 通过架构审核
+	ApproveArchitecture(ctx context.Context, identifier string) error
+
+	// RejectArchitecture 驳回架构审核（附带驳回原因）
+	RejectArchitecture(ctx context.Context, identifier string, reason string) error
+
+	// GetVerificationReport 获取任务的验收报告内容
+	GetVerificationReport(ctx context.Context, identifier string) (*VerificationReport, error)
+
+	// UpdateVerificationReport 更新任务的验收报告
+	UpdateVerificationReport(ctx context.Context, identifier string, report *VerificationReport) error
+
+	// ApproveVerification 通过验收
+	ApproveVerification(ctx context.Context, identifier string) error
+
+	// RejectVerification 驳回验收（流转回实现中）
+	RejectVerification(ctx context.Context, identifier string, reason string) error
 }
 
 // NewTracker 根据配置创建对应的问题跟踪器

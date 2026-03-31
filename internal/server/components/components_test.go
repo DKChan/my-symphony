@@ -291,3 +291,152 @@ func TestRenderTaskDetailHTML_ProgressBar(t *testing.T) {
 		assert.Contains(t, html, "width: "+strconv.Itoa(expectedWidth))
 	}
 }
+
+// Epic 8: 待人工处理页面渲染测试
+
+func TestRenderNeedsAttentionHTML_Basic(t *testing.T) {
+	failedAt := time.Now().Add(-1 * time.Hour)
+	issue := &domain.Issue{
+		ID:          "1",
+		Identifier:  "FAIL-123",
+		Title:       "失败的任务",
+		Description: nil,
+		State:       "Needs Attention",
+	}
+
+	stageState := &domain.StageState{
+		Name:          "implementation",
+		Status:        "failed",
+		StartedAt:     time.Now().Add(-2 * time.Hour),
+		UpdatedAt:     time.Now(),
+		FailedAt:      &failedAt,
+		RetryCount:    3,
+		ErrorType:     "execution_error",
+		ErrorMessage:  "测试执行失败：无法连接数据库",
+		LastLogSnippet: "[ERROR] connection refused\n[ERROR] retry 1/3 failed\n[ERROR] max retries exceeded",
+		Suggestion:     "请检查数据库连接配置，确保数据库服务正在运行",
+	}
+
+	html := components.RenderNeedsAttentionHTML(issue, stageState)
+
+	// 验证基本信息
+	assert.Contains(t, html, "FAIL-123")
+	assert.Contains(t, html, "失败的任务")
+	assert.Contains(t, html, "待人工处理")
+
+	// 验证失败详情
+	assert.Contains(t, html, "失败阶段")
+	assert.Contains(t, html, "失败时间")
+	assert.Contains(t, html, "错误类型")
+	assert.Contains(t, html, "重试次数")
+	assert.Contains(t, html, "3")
+
+	// 验证错误信息
+	assert.Contains(t, html, "错误消息")
+	assert.Contains(t, html, "测试执行失败：无法连接数据库")
+
+	// 验证日志片段
+	assert.Contains(t, html, "日志片段")
+	assert.Contains(t, html, "[ERROR] connection refused")
+
+	// 验证修复建议
+	assert.Contains(t, html, "修复建议")
+	assert.Contains(t, html, "请检查数据库连接配置")
+
+	// 验证操作按钮
+	assert.Contains(t, html, "重新执行")
+	assert.Contains(t, html, "重新澄清需求")
+	assert.Contains(t, html, "放弃任务")
+}
+
+func TestRenderNeedsAttentionHTML_WithoutLogSnippet(t *testing.T) {
+	failedAt := time.Now()
+	issue := &domain.Issue{
+		ID:         "1",
+		Identifier: "FAIL-456",
+		Title:      "无日志片段的失败任务",
+		State:      "Needs Attention",
+	}
+
+	stageState := &domain.StageState{
+		Name:          "verification",
+		Status:        "failed",
+		StartedAt:     time.Now().Add(-30 * time.Minute),
+		UpdatedAt:     time.Now(),
+		FailedAt:      &failedAt,
+		RetryCount:    1,
+		ErrorType:     "test_failure",
+		ErrorMessage:  "验收测试失败",
+		LastLogSnippet: "",
+		Suggestion:     "请手动检查测试用例",
+	}
+
+	html := components.RenderNeedsAttentionHTML(issue, stageState)
+
+	// 验证基本信息
+	assert.Contains(t, html, "FAIL-456")
+	assert.Contains(t, html, "无日志片段的失败任务")
+
+	// 日志片段区域不应显示（因为为空）
+	assert.NotContains(t, html, "log-snippet\">")
+}
+
+func TestRenderNeedsAttentionHTML_WithoutSuggestion(t *testing.T) {
+	failedAt := time.Now()
+	issue := &domain.Issue{
+		ID:         "1",
+		Identifier: "FAIL-789",
+		Title:      "无建议的失败任务",
+		State:      "Needs Attention",
+	}
+
+	stageState := &domain.StageState{
+		Name:          "implementation",
+		Status:        "failed",
+		StartedAt:     time.Now().Add(-1 * time.Hour),
+		UpdatedAt:     time.Now(),
+		FailedAt:      &failedAt,
+		RetryCount:    2,
+		ErrorType:     "unknown_error",
+		ErrorMessage:  "未知错误",
+		LastLogSnippet: "some log content",
+		Suggestion:     "",
+	}
+
+	html := components.RenderNeedsAttentionHTML(issue, stageState)
+
+	// 验证基本信息
+	assert.Contains(t, html, "FAIL-789")
+
+	// 建议区域不应显示（因为为空） - 检查 suggestion-box div 元素不存在
+	assert.NotContains(t, html, `<div class="suggestion-box">`)
+}
+
+func TestRenderNeedsAttentionHTML_MaxRetries(t *testing.T) {
+	failedAt := time.Now()
+	issue := &domain.Issue{
+		ID:         "1",
+		Identifier: "FAIL-MAX",
+		Title:      "达到最大重试次数",
+		State:      "Needs Attention",
+	}
+
+	stageState := &domain.StageState{
+		Name:          "implementation",
+		Status:        "failed",
+		StartedAt:     time.Now().Add(-3 * time.Hour),
+		UpdatedAt:     time.Now(),
+		FailedAt:      &failedAt,
+		RetryCount:    5,
+		ErrorType:     "max_retries_exceeded",
+		ErrorMessage:  "已达到最大重试次数",
+		LastLogSnippet: "Final retry attempt failed",
+		Suggestion:     "任务需要人工干预",
+	}
+
+	html := components.RenderNeedsAttentionHTML(issue, stageState)
+
+	// 验证重试次数显示
+	assert.Contains(t, html, "已达到最大重试次数 (5/5)")
+	assert.Contains(t, html, "Final retry attempt failed")
+}

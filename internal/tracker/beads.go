@@ -461,3 +461,161 @@ func (c *BeadsClient) RejectBDD(ctx context.Context, identifier string, reason s
 
 	return nil
 }
+
+// GetVerificationReport 获取任务的验收报告
+func (c *BeadsClient) GetVerificationReport(ctx context.Context, identifier string) (*domain.VerificationReport, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "show", identifier, "--field", "verification_report"}
+	output, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get verification report failed: %w", err)
+	}
+
+	if len(output) == 0 {
+		return nil, nil
+	}
+
+	var report domain.VerificationReport
+	if err := json.Unmarshal(output, &report); err != nil {
+		// 如果不是 JSON，可能是纯文本存储
+		return &domain.VerificationReport{
+			TaskIdentifier: identifier,
+			RawContent:     string(output),
+		}, nil
+	}
+
+	return &report, nil
+}
+
+// UpdateVerificationReport 更新任务的验收报告
+func (c *BeadsClient) UpdateVerificationReport(ctx context.Context, identifier string, report *domain.VerificationReport) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	reportJSON, err := json.Marshal(report)
+	if err != nil {
+		return fmt.Errorf("marshal verification report: %w", err)
+	}
+
+	args := []string{"issue", "update", identifier, "--field", "verification_report=" + string(reportJSON)}
+	_, err = c.runCommand(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("update verification report failed: %w", err)
+	}
+
+	return nil
+}
+
+// ApproveVerification 通过验收
+func (c *BeadsClient) ApproveVerification(ctx context.Context, identifier string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "update", identifier, "--field", "verification_status=approved", "--state", "Done"}
+	_, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("approve verification failed: %w", err)
+	}
+
+	return nil
+}
+
+// RejectVerification 驳回验收（流转回实现中）
+func (c *BeadsClient) RejectVerification(ctx context.Context, identifier string, reason string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "update", identifier, "--field", "verification_status=rejected", "--field", "verification_reject_reason="+reason, "--state", "In Progress"}
+	_, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("reject verification failed: %w", err)
+	}
+
+	return nil
+}
+
+// GetArchitectureContent 获取任务的架构设计内容
+func (c *BeadsClient) GetArchitectureContent(ctx context.Context, identifier string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "show", identifier, "--field", "architecture_content"}
+	output, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("get architecture content failed: %w", err)
+	}
+
+	return string(output), nil
+}
+
+// UpdateArchitectureContent 更新任务的架构设计内容
+func (c *BeadsClient) UpdateArchitectureContent(ctx context.Context, identifier string, content string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "update", identifier, "--field", "architecture_content=" + content}
+	_, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("update architecture content failed: %w", err)
+	}
+
+	return nil
+}
+
+// ApproveArchitecture 通过架构审核
+func (c *BeadsClient) ApproveArchitecture(ctx context.Context, identifier string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "update", identifier, "--field", "architecture_status=approved"}
+	_, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("approve architecture failed: %w", err)
+	}
+
+	return nil
+}
+
+// RejectArchitecture 驳回架构审核
+func (c *BeadsClient) RejectArchitecture(ctx context.Context, identifier string, reason string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "update", identifier, "--field", "architecture_status=rejected", "--field", "architecture_reject_reason="+reason}
+	_, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("reject architecture failed: %w", err)
+	}
+
+	return nil
+}
+
+// GetTDDContent 获取任务的 TDD 规则内容
+func (c *BeadsClient) GetTDDContent(ctx context.Context, identifier string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "show", identifier, "--field", "tdd_content"}
+	output, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("get TDD content failed: %w", err)
+	}
+
+	return string(output), nil
+}
+
+// UpdateTDDContent 更新任务的 TDD 规则内容
+func (c *BeadsClient) UpdateTDDContent(ctx context.Context, identifier string, content string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	args := []string{"issue", "update", identifier, "--field", "tdd_content=" + content}
+	_, err := c.runCommand(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("update TDD content failed: %w", err)
+	}
+
+	return nil
+}

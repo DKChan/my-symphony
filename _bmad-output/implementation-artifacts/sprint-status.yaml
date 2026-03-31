@@ -68,44 +68,44 @@ development_status:
   epic-3-retrospective: done
 
   # Epic 4: BDD 规则生成与审核 (FR22, FR24-26, FR30)
-  epic-4: in-progress
-  4-1-bdd-规则自动生成: in-progress
-  4-2-web-页面查看-bdd-规则: in-progress
-  4-3-web-页面审核-bdd-规则: in-progress
-  4-4-审核通过规则作为约束条件: in-progress
+  epic-4: done
+  4-1-bdd-规则自动生成: done
+  4-2-web-页面查看-bdd-规则: done
+  4-3-web-页面审核-bdd-规则: done
+  4-4-审核通过规则作为约束条件: done
   epic-4-retrospective: optional
 
   # Epic 5: 架构设计与 TDD 规则审核 (FR23, FR27-29)
-  epic-5: backlog
-  5-1-架构设计与-tdd-规则自动生成: backlog
-  5-2-web-页面查看架构设计: backlog
-  5-3-web-页面审核架构设计: backlog
+  epic-5: done
+  5-1-架构设计与-tdd-规则自动生成: done
+  5-2-web-页面查看架构设计: done
+  5-3-web-页面审核架构设计: done
   epic-5-retrospective: optional
 
   # Epic 6: AI Agent 执行与实时监控 (FR32-33, FR36-40, FR52-54)
-  epic-6: backlog
-  6-1-ai-agent-cli-执行调用: backlog
-  6-2-执行状态监控: backlog
-  6-3-web-页面查看进度摘要: backlog
-  6-4-web-页面查看执行日志: backlog
-  6-5-执行错误检测与重试: backlog
-  6-6-状态变化视觉反馈: backlog
+  epic-6: done
+  6-1-ai-agent-cli-执行调用: done
+  6-2-执行状态监控: done
+  6-3-web-页面查看进度摘要: done
+  6-4-web-页面查看执行日志: done
+  6-5-执行错误检测与重试: done
+  6-6-状态变化视觉反馈: done
   epic-6-retrospective: optional
 
   # Epic 7: 验收报告与任务完成 (FR41-44, FR56)
-  epic-7: backlog
-  7-1-验收报告生成: backlog
-  7-2-验收报告-web-页面展示: backlog
-  7-3-验收通过驳回状态流转: backlog
-  7-4-任务完成后-git-提交: backlog
+  epic-7: done
+  7-1-验收报告生成: done
+  7-2-验收报告-web-页面展示: done
+  7-3-验收通过驳回状态流转: done
+  7-4-任务完成后-git-提交: done
   epic-7-retrospective: optional
 
   # Epic 8: 异常处理与人工干预 (FR45-49)
-  epic-8: backlog
-  8-1-失败任务流转到待人工处理状态: backlog
-  8-2-失败详情展示与建议查看: backlog
-  8-3-手动修复后继续执行: backlog
-  8-4-需求重新澄清或放弃: backlog
+  epic-8: done
+  8-1-失败任务流转到待人工处理状态: done
+  8-2-失败详情展示与建议查看: done
+  8-3-手动修复后继续执行: done
+  8-4-需求重新澄清或放弃: done
   epic-8-retrospective: optional
 
   # Epic 9: 服务可靠性与崩溃恢复 (FR51, NFR1, NFR3, NFR5)

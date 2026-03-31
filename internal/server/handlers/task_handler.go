@@ -315,8 +315,155 @@ func (h *TaskHandler) HandleBDDReviewPage(c *gin.Context) {
 		bddContent = ""
 	}
 
-	// 渲染 BDD 审核页面
+	// RenderBDDReviewHTML 渲染 BDD 规则审核页面
 	html := components.RenderBDDReviewHTML(issue, stageState, bddContent)
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, html)
+}
+
+// HandleArchitectureReviewPage 处理架构设计审核页面请求
+// GET /tasks/:identifier/architecture
+func (h *TaskHandler) HandleArchitectureReviewPage(c *gin.Context) {
+	identifier := c.Param("identifier")
+
+	// 检查 tracker 是否可用
+	if h.tracker == nil {
+		html := components.RenderErrorHTML("Tracker 不可用", "无法获取任务信息")
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusInternalServerError, html)
+		return
+	}
+
+	ctx := context.Background()
+
+	// 获取任务详情
+	issue, err := h.tracker.GetTask(ctx, identifier)
+	if err != nil {
+		// 任务不存在，显示错误页面
+		html := components.RenderErrorHTML("任务不存在", fmt.Sprintf("无法找到任务 %s", identifier))
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusNotFound, html)
+		return
+	}
+
+	// 获取阶段状态
+	stageState, err := h.tracker.GetStageState(ctx, identifier)
+	if err != nil {
+		// 获取失败时使用默认状态
+		stageState = &domain.StageState{
+			Name:      "architecture_review",
+			Status:    "pending",
+			StartedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+	}
+
+	// 获取架构设计内容
+	archContent, err := h.tracker.GetArchitectureContent(ctx, identifier)
+	if err != nil {
+		// 架构设计内容不存在时，显示空内容页面
+		archContent = ""
+	}
+
+	// 获取 TDD 规则内容
+	tddContent, err := h.tracker.GetTDDContent(ctx, identifier)
+	if err != nil {
+		// TDD 规则内容不存在时，显示空内容页面
+		tddContent = ""
+	}
+
+	// 渲染架构设计审核页面
+	html := components.RenderArchitectureReviewHTML(issue, stageState, archContent, tddContent)
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, html)
+}
+// HandleNeedsAttentionPage 处理待人工处理任务详情页面请求
+// GET /tasks/:identifier/needs-attention
+func (h *TaskHandler) HandleNeedsAttentionPage(c *gin.Context) {
+	identifier := c.Param("identifier")
+
+	// 检查 tracker 是否可用
+	if h.tracker == nil {
+		html := components.RenderErrorHTML("Tracker 不可用", "无法获取任务信息")
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusInternalServerError, html)
+		return
+	}
+
+	ctx := context.Background()
+
+	// 获取任务详情
+	issue, err := h.tracker.GetTask(ctx, identifier)
+	if err != nil {
+		html := components.RenderErrorHTML("任务不存在", fmt.Sprintf("无法找到任务 %s", identifier))
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusNotFound, html)
+		return
+	}
+
+	// 获取阶段状态
+	stageState, err := h.tracker.GetStageState(ctx, identifier)
+	if err != nil {
+		stageState = &domain.StageState{
+			Name:      "needs_attention",
+			Status:    "failed",
+			StartedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+	}
+
+	// 渲染待人工处理页面
+	html := components.RenderNeedsAttentionHTML(issue, stageState)
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, html)
+}
+
+// HandleVerificationPage 处理验收报告页面请求
+// GET /tasks/:identifier/verification
+func (h *TaskHandler) HandleVerificationPage(c *gin.Context) {
+	identifier := c.Param("identifier")
+
+	// 检查 tracker 是否可用
+	if h.tracker == nil {
+		html := components.RenderErrorHTML("Tracker 不可用", "无法获取任务信息")
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusInternalServerError, html)
+		return
+	}
+
+	ctx := context.Background()
+
+	// 获取任务详情
+	issue, err := h.tracker.GetTask(ctx, identifier)
+	if err != nil {
+		// 任务不存在，显示错误页面
+		html := components.RenderErrorHTML("任务不存在", fmt.Sprintf("无法找到任务 %s", identifier))
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusNotFound, html)
+		return
+	}
+
+	// 获取阶段状态
+	stageState, err := h.tracker.GetStageState(ctx, identifier)
+	if err != nil {
+		// 获取失败时使用默认状态
+		stageState = &domain.StageState{
+			Name:      "verification",
+			Status:    "pending",
+			StartedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+	}
+
+	// 获取验收报告
+	report, err := h.tracker.GetVerificationReport(ctx, identifier)
+	if err != nil {
+		// 验收报告不存在时，显示空报告
+		report = nil
+	}
+
+	// 渲染验收报告页面
+	html := components.RenderVerificationReportHTML(issue, stageState, report)
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, html)
 }

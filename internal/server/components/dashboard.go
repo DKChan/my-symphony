@@ -1,12 +1,14 @@
 package components
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dministrator/symphony/internal/common"
 	"github.com/dministrator/symphony/internal/domain"
+	"github.com/dministrator/symphony/internal/workflow"
 )
 
 // MaxClarificationRounds 最大澄清轮次
@@ -58,6 +60,15 @@ func RenderTaskDetailHTML(issue *domain.Issue, stageState *domain.StageState, co
 	state := issue.State
 	stateClass := common.StateBadgeClass(state)
 	stageDisplay := getStageDisplay(stageState.Name)
+	statusDisplay := getStatusDisplay(stageState.Status)
+
+	// 计算已用时间
+	elapsedSeconds := int64(0)
+	elapsedDisplay := ""
+	if stageState.StartedAt != (time.Time{}) {
+		elapsedSeconds = int64(time.Since(stageState.StartedAt).Seconds())
+		elapsedDisplay = formatDurationForDetail(elapsedSeconds)
+	}
 
 	// 解析澄清进度
 	currentRound := stageState.Round
@@ -65,6 +76,11 @@ func RenderTaskDetailHTML(issue *domain.Issue, stageState *domain.StageState, co
 
 	// 判断是否处于等待用户回答状态
 	isWaitingForAnswer := stageState.Name == "clarification" && stageState.Status == "in_progress"
+
+	// 判断是否在实现阶段或需要人工处理阶段
+	isImplementation := stageState.Name == "implementation"
+	isNeedsAttention := stageState.Name == "needs_attention"
+	isVerification := stageState.Name == "verification"
 
 	// 获取当前问题（最后一条 assistant 消息）
 	currentQuestion := ""
@@ -122,12 +138,38 @@ func RenderTaskDetailHTML(issue *domain.Issue, stageState *domain.StageState, co
                         <div style="display: flex; gap: 1rem; align-items: center;">
                             <span class="` + stateClass + `">` + common.EscapeHTML(state) + `</span>
                             <span style="color: var(--muted); font-size: 0.85rem;">阶段: ` + stageDisplay + `</span>
+                            <span style="color: var(--muted); font-size: 0.85rem;">状态: ` + statusDisplay + `</span>
+                            ` + func() string {
+		if elapsedDisplay != "" {
+			return `<span style="color: var(--muted); font-size: 0.85rem;">已用时间: <span class="mono">` + elapsedDisplay + `</span></span>`
+		}
+		return ""
+	}() + `
                         </div>
                     </div>
+                    ` + func() string {
+		if isImplementation || isNeedsAttention || isVerification {
+			return `<div style="display: flex; gap: 0.5rem;">
+                        <a href="/tasks/` + common.EscapeHTML(issue.Identifier) + `/logs" class="btn-secondary" style="padding: 0.5rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--ink); font-size: 0.85rem;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                            </svg>
+                            执行日志
+                        </a>
+                    </div>`
+		}
+		return ""
+	}() + `
                 </div>
 
                 <!-- 进度显示 -->
-                <div class="progress-section" style="background: var(--surface); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
+                ` + func() string {
+		// 澄清阶段显示澄清进度
+		if stageState.Name == "clarification" {
+			return `<div class="progress-section" style="background: var(--surface); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="color: var(--ink); font-weight: 500;">澄清进度</span>
                         <span class="mono" style="color: var(--accent);">第 ` + roundProgress + ` 轮</span>
@@ -135,7 +177,79 @@ func RenderTaskDetailHTML(issue *domain.Issue, stageState *domain.StageState, co
                     <div class="progress-bar" style="margin-top: 0.5rem; height: 6px; background: var(--line); border-radius: var(--radius-sm);">
                         <div class="progress-bar-fill" style="height: 100%; width: ` + strconv.Itoa(int(float64(currentRound)/float64(MaxClarificationRounds)*100)) + `%; background: var(--accent); border-radius: var(--radius-sm);"></div>
                     </div>
-                </div>
+                </div>`
+		}
+		// 实现阶段显示执行进度摘要
+		if isImplementation {
+			progressSummary := "正在执行..."
+			if stageState.Status == "failed" {
+				progressSummary = "执行失败 - 查看日志了解详情"
+			} else if stageState.Status == "completed" {
+				progressSummary = "执行完成"
+			}
+			return `<div class="progress-section" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05)); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: var(--radius-lg); padding: 1rem; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: var(--ink); font-weight: 500;">实现进度</span>
+                        <span class="mono" style="color: var(--accent);">` + elapsedDisplay + `</span>
+                    </div>
+                    <div style="margin-top: 0.75rem; color: var(--ink-bright); font-size: 0.9rem;">
+                        ` + progressSummary + `
+                    </div>
+                    <div style="margin-top: 0.5rem;">
+                        <small style="color: var(--muted);">点击上方"执行日志"按钮查看详细执行记录</small>
+                    </div>
+                </div>`
+		}
+		// 需要人工处理阶段显示提示
+		if isNeedsAttention {
+			return `<div class="progress-section" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05)); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-lg); padding: 1rem; margin-bottom: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--danger);">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <span style="color: var(--danger); font-weight: 600;">需要人工处理</span>
+                    </div>
+                    <div style="color: var(--ink); font-size: 0.9rem; margin-top: 0.5rem;">
+                        此任务在执行过程中遇到问题，需要人工干预。
+                        ` + func() string {
+				if stageState.Error != "" {
+					return `<div style="margin-top: 0.75rem; background: var(--surface); border-radius: var(--radius-sm); padding: 0.75rem;">
+                            <span style="color: var(--muted); font-size: 0.85rem;">错误信息:</span>
+                            <pre style="color: var(--danger); font-size: 0.85rem; margin: 0.25rem 0 0 0; white-space: pre-wrap;">` + common.EscapeHTML(stageState.Error) + `</pre>
+                        </div>`
+				}
+				return ""
+			}() + `
+                    </div>
+                    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+                        <button onclick="resumeTask()" style="padding: 0.5rem 1rem; border: 1px solid var(--accent); border-radius: var(--radius); background: transparent; color: var(--accent); cursor: pointer;">
+                            继续执行
+                        </button>
+                        <button onclick="reclarifyTask()" style="padding: 0.5rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--ink); cursor: pointer;">
+                            重新澄清
+                        </button>
+                        <button onclick="abandonTask()" style="padding: 0.5rem 1rem; border: 1px solid var(--danger); border-radius: var(--radius); background: transparent; color: var(--danger); cursor: pointer;">
+                            放弃任务
+                        </button>
+                    </div>
+                </div>`
+		}
+		// 其他阶段显示基本状态
+		return `<div class="progress-section" style="background: var(--surface); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: var(--ink); font-weight: 500;">当前阶段</span>
+                        <span style="color: var(--accent);">` + stageDisplay + `</span>
+                    </div>
+                    ` + func() string {
+			if elapsedDisplay != "" {
+				return `<div style="margin-top: 0.5rem; color: var(--muted); font-size: 0.85rem;">已用时间: <span class="mono">` + elapsedDisplay + `</span></div>`
+			}
+			return ""
+		}() + `
+                </div>`
+	}() + `
 
                 <!-- 当前问题 -->
                 ` + func() string {
@@ -241,6 +355,72 @@ func RenderTaskDetailHTML(issue *domain.Issue, stageState *domain.StageState, co
                 });
             }
         }
+
+        function resumeTask() {
+            if (confirm('确定要继续执行此任务吗？')) {
+                fetch('/api/tasks/` + common.EscapeHTML(issue.Identifier) + `/resume', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('继续执行失败: ' + (data.error ? data.error.message : '未知错误'));
+                    }
+                })
+                .catch(err => {
+                    alert('继续执行失败: 网络错误');
+                });
+            }
+        }
+
+        function reclarifyTask() {
+            if (confirm('确定要重新澄清此任务的需求吗？')) {
+                fetch('/api/tasks/` + common.EscapeHTML(issue.Identifier) + `/reclarify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('重新澄清失败: ' + (data.error ? data.error.message : '未知错误'));
+                    }
+                })
+                .catch(err => {
+                    alert('重新澄清失败: 网络错误');
+                });
+            }
+        }
+
+        function abandonTask() {
+            if (confirm('确定要放弃此任务吗？此操作不可撤销。')) {
+                fetch('/api/tasks/` + common.EscapeHTML(issue.Identifier) + `/abandon', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('放弃任务失败: ' + (data.error ? data.error.message : '未知错误'));
+                    }
+                })
+                .catch(err => {
+                    alert('放弃任务失败: 网络错误');
+                });
+            }
+        }
     </script>
 </body>
 </html>`
@@ -285,6 +465,26 @@ func renderConversationHistory(history []domain.ConversationTurn) string {
 func getStageDisplay(stageName string) string {
 	stageConfig := common.GetKanbanStageConfig(stageName)
 	return stageConfig.Title
+}
+
+// getStatusDisplay 获取状态显示名称
+func getStatusDisplay(status string) string {
+	return workflow.GetStatusDisplayName(workflow.StageStatus(status))
+}
+
+// formatDurationForDetail 格式化持续时间用于详情页面显示
+func formatDurationForDetail(seconds int64) string {
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	minutes := seconds / 60
+	secs := seconds % 60
+	if minutes < 60 {
+		return fmt.Sprintf("%dm %ds", minutes, secs)
+	}
+	hours := minutes / 60
+	mins := minutes % 60
+	return fmt.Sprintf("%dh %dm", hours, mins)
 }
 
 // RenderFilterBar 渲染任务状态筛选器
@@ -2003,4 +2203,1586 @@ func getStepCSSClass(line string) string {
 	default:
 		return "step-other"
 	}
+}
+
+// RenderArchitectureReviewHTML 渲染架构设计审核页面
+func RenderArchitectureReviewHTML(issue *domain.Issue, stageState *domain.StageState, archContent string, tddContent string) string {
+	// 解析状态
+	state := issue.State
+	stateClass := common.StateBadgeClass(state)
+	stageDisplay := getStageDisplay(stageState.Name)
+
+	// 格式化架构设计内容用于显示
+	formattedArch := formatArchitectureContent(archContent)
+	formattedTDD := formatTDDContent(tddContent)
+
+	return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Symphony · 架构设计审核: ` + common.EscapeHTML(issue.Identifier) + `</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/dashboard.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10" crossorigin="anonymous"></script>
+    <style>
+    .arch-container {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+    .arch-header {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 1rem;
+        margin-bottom: 1rem;
+    }
+    .arch-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--accent);
+    }
+    .arch-overview {
+        color: var(--ink);
+        margin-top: 0.5rem;
+        font-size: 0.9rem;
+        line-height: 1.6;
+    }
+    .component-block {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .component-name {
+        font-weight: 600;
+        color: var(--ink-bright);
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .component-badge {
+        background: rgba(236, 72, 153, 0.2);
+        color: #ec4899;
+        padding: 0.25rem 0.5rem;
+        border-radius: var(--radius-sm);
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .tdd-container {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        margin-top: 1.5rem;
+    }
+    .tdd-rule-block {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .tdd-rule-name {
+        font-weight: 600;
+        color: var(--ink-bright);
+        margin-bottom: 0.75rem;
+    }
+    .tdd-rule-priority {
+        display: inline-block;
+        padding: 0.125rem 0.5rem;
+        border-radius: var(--radius-sm);
+        font-size: 0.7rem;
+        font-weight: 600;
+        margin-left: 0.5rem;
+    }
+    .priority-high { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .priority-medium { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+    .priority-low { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .arch-section {
+        margin-bottom: 1.5rem;
+    }
+    .arch-section-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--ink-bright);
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .arch-content {
+        font-family: 'Fira Code', monospace;
+        font-size: 0.85rem;
+        line-height: 1.8;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        color: var(--ink);
+    }
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--line);
+    }
+    .btn-approve {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(34, 197, 94, 0.7));
+        color: white;
+        border: none;
+        border-radius: var(--radius);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-approve:hover {
+        background: linear-gradient(135deg, rgba(34, 197, 94, 1), rgba(34, 197, 94, 0.9));
+        transform: translateY(-1px);
+    }
+    .btn-reject {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0.7));
+        color: white;
+        border: none;
+        border-radius: var(--radius);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-reject:hover {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 1), rgba(239, 68, 68, 0.9));
+        transform: translateY(-1px);
+    }
+    .btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: var(--surface);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+    .btn-back:hover {
+        background: var(--card);
+    }
+    .reject-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    .reject-modal-content {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        max-width: 500px;
+        width: 90%;
+    }
+    .reject-reason-input {
+        width: 100%;
+        min-height: 100px;
+        padding: 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: var(--ink-bright);
+        font-size: 0.9rem;
+        resize: vertical;
+    }
+    .no-content {
+        text-align: center;
+        padding: 3rem;
+        color: var(--muted);
+    }
+    .no-content-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+    .tab-container {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 0.5rem;
+    }
+    .tab-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        background: transparent;
+        color: var(--ink);
+        cursor: pointer;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .tab-btn:hover {
+        background: var(--surface);
+    }
+    .tab-btn.active {
+        background: var(--accent);
+        color: white;
+    }
+    .tab-content {
+        display: none;
+    }
+    .tab-content.active {
+        display: block;
+    }
+    </style>
+</head>
+<body>
+    <main class="app-shell">
+        <section class="dashboard-shell">
+            <header class="hero-card">
+                <div class="hero-grid">
+                    <div>
+                        <p class="eyebrow">Symphony Orchestrator</p>
+                        <h1 class="hero-title">架构设计审核: ` + common.EscapeHTML(issue.Identifier) + `</h1>
+                        <p class="hero-copy">` + common.EscapeHTML(issue.Title) + `</p>
+                    </div>
+                    <div class="status-stack">
+                        <a href="/api/v1/` + common.EscapeHTML(issue.Identifier) + `" class="btn-back" style="padding: 0.5rem 1rem;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                            返回任务详情
+                        </a>
+                    </div>
+                </div>
+            </header>
+
+            <section class="section-card" style="background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1.5rem;">
+                <div class="task-detail-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div>
+                        <h2 style="font-size: 1.1rem; font-weight: 600; color: var(--ink-bright);">` + common.EscapeHTML(issue.Title) + `</h2>
+                        <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.5rem;">
+                            <span class="` + stateClass + `">` + common.EscapeHTML(state) + `</span>
+                            <span style="color: var(--muted); font-size: 0.85rem;">阶段: ` + stageDisplay + `</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="arch-container">
+                <div class="tab-container">
+                    <button class="tab-btn active" onclick="switchTab('architecture')">架构设计</button>
+                    <button class="tab-btn" onclick="switchTab('tdd')">TDD 规则</button>
+                </div>
+
+                <div id="tab-architecture" class="tab-content active">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="3" y1="9" x2="21" y2="9"></line>
+                            <line x1="9" y1="21" x2="9" y2="9"></line>
+                        </svg>
+                        <span style="font-weight: 600; color: var(--ink-bright); font-size: 1rem;">架构设计文档</span>
+                    </div>
+
+                    ` + func() string {
+		if archContent == "" {
+			return `<div class="no-content">
+                        <div class="no-content-icon">🏗️</div>
+                        <p>暂无架构设计内容</p>
+                        <p style="font-size: 0.85rem; margin-top: 0.5rem;">等待 AI 生成架构设计...</p>
+                    </div>`
+		}
+		return formattedArch
+	}() + `
+                </div>
+
+                <div id="tab-tdd" class="tab-content">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+                            <polyline points="9 11 12 14 22 4"></polyline>
+                            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                        </svg>
+                        <span style="font-weight: 600; color: var(--ink-bright); font-size: 1rem;">TDD 规则列表</span>
+                    </div>
+
+                    ` + func() string {
+		if tddContent == "" {
+			return `<div class="no-content">
+                        <div class="no-content-icon">✅</div>
+                        <p>暂无 TDD 规则内容</p>
+                        <p style="font-size: 0.85rem; margin-top: 0.5rem;">等待 AI 生成 TDD 规则...</p>
+                    </div>`
+		}
+		return formattedTDD
+	}() + `
+                </div>
+            </section>
+
+            ` + func() string {
+		if archContent == "" {
+			return ``
+		}
+		return `<div class="action-buttons">
+                    <a href="/" class="btn-back">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="19" y1="12" x2="5" y2="12"></line>
+                            <polyline points="12 19 5 12 12 5"></polyline>
+                        </svg>
+                        返回看板
+                    </a>
+                    <button type="button" class="btn-approve" onclick="approveArchitecture()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        通过
+                    </button>
+                    <button type="button" class="btn-reject" onclick="showRejectModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        驳回
+                    </button>
+                </div>`
+	}() + `
+        </section>
+    </main>
+
+    <!-- 驳回确认对话框 -->
+    <div id="reject-modal" class="reject-modal">
+        <div class="reject-modal-content">
+            <h3 style="font-size: 1.1rem; font-weight: 600; color: var(--ink-bright); margin-bottom: 1rem;">驳回架构设计</h3>
+            <p style="color: var(--ink); font-size: 0.9rem; margin-bottom: 1rem;">请输入驳回原因，AI 将根据您的反馈重新生成架构设计。</p>
+            <textarea id="reject-reason" class="reject-reason-input" placeholder="请描述需要修改的内容..."></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+                <button type="button" class="btn-back" onclick="hideRejectModal()">取消</button>
+                <button type="button" class="btn-reject" onclick="rejectArchitecture()">确认驳回</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function switchTab(tabId) {
+        // 切换标签页按钮状态
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+
+        // 切换内容显示
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        document.getElementById('tab-' + tabId).classList.add('active');
+    }
+
+    function approveArchitecture() {
+        fetch('/api/v1/` + common.EscapeHTML(issue.Identifier) + `/architecture/approve', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('架构设计已通过审核');
+                window.location.href = '/api/v1/` + common.EscapeHTML(issue.Identifier) + `';
+            } else {
+                alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+            }
+        })
+        .catch(err => {
+            alert('操作失败: 网络错误');
+        });
+    }
+
+    function showRejectModal() {
+        document.getElementById('reject-modal').style.display = 'flex';
+    }
+
+    function hideRejectModal() {
+        document.getElementById('reject-modal').style.display = 'none';
+        document.getElementById('reject-reason').value = '';
+    }
+
+    function rejectArchitecture() {
+        const reason = document.getElementById('reject-reason').value.trim();
+        if (!reason) {
+            alert('请输入驳回原因');
+            return;
+        }
+
+        fetch('/api/v1/` + common.EscapeHTML(issue.Identifier) + `/architecture/reject', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reason: reason })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('架构设计已驳回，AI 将重新生成');
+                window.location.href = '/api/v1/` + common.EscapeHTML(issue.Identifier) + `';
+            } else {
+                alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+            }
+        })
+        .catch(err => {
+            alert('操作失败: 网络错误');
+        });
+    }
+
+    // 点击模态框外部关闭
+    document.getElementById('reject-modal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            hideRejectModal();
+        }
+    });
+    </script>
+</body>
+</html>`
+}
+
+// formatArchitectureContent 格式化架构设计内容用于 HTML 显示
+func formatArchitectureContent(content string) string {
+	if content == "" {
+		return ""
+	}
+
+	// 使用转义处理
+	escapedContent := common.EscapeHTML(content)
+
+	// 添加架构设计语法高亮
+	lines := strings.Split(escapedContent, "\n")
+	result := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// 标题
+		if strings.HasPrefix(trimmed, "# ") {
+			result = append(result, `<div class="arch-section-title" style="font-size: 1.25rem; color: var(--accent); margin-top: 1rem;">`+strings.TrimPrefix(trimmed, "# ")+`</div>`)
+			continue
+		}
+
+		// 二级标题
+		if strings.HasPrefix(trimmed, "## ") {
+			result = append(result, `<div class="arch-section-title" style="margin-top: 1rem;">`+strings.TrimPrefix(trimmed, "## ")+`</div>`)
+			continue
+		}
+
+		// 三级标题
+		if strings.HasPrefix(trimmed, "### ") {
+			result = append(result, `<div class="component-name"><span class="component-badge">组件</span>`+strings.TrimPrefix(trimmed, "### ")+`</div>`)
+			continue
+		}
+
+		// 加粗文本
+		if strings.HasPrefix(trimmed, "**") && strings.Contains(trimmed, ":**") {
+			result = append(result, `<div style="color: var(--accent); font-weight: 600; margin: 0.5rem 0;">`+trimmed+`</div>`)
+			continue
+		}
+
+		// 列表项
+		if strings.HasPrefix(trimmed, "- ") {
+			result = append(result, `<div style="padding-left: 1rem; color: var(--ink);">`+line+`</div>`)
+			continue
+		}
+
+		// 表格行
+		if strings.HasPrefix(trimmed, "|") {
+			result = append(result, `<div style="font-family: 'Fira Code', monospace; font-size: 0.8rem; color: var(--ink);">`+line+`</div>`)
+			continue
+		}
+
+		// 空行
+		if trimmed == "" {
+			result = append(result, "")
+			continue
+		}
+
+		// 普通文本
+		result = append(result, `<div style="color: var(--ink);">`+line+`</div>`)
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// formatTDDContent 格式化 TDD 规则内容用于 HTML 显示
+func formatTDDContent(content string) string {
+	if content == "" {
+		return ""
+	}
+
+	// 使用转义处理
+	escapedContent := common.EscapeHTML(content)
+
+	// 添加 TDD 规则语法高亮
+	lines := strings.Split(escapedContent, "\n")
+	result := make([]string, 0, len(lines))
+
+	var inRule bool
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// 标题
+		if strings.HasPrefix(trimmed, "# TDD 规则: ") {
+			result = append(result, `<div class="arch-section-title" style="font-size: 1.25rem; color: var(--accent);">TDD 规则: `+strings.TrimPrefix(trimmed, "# TDD 规则: ")+`</div>`)
+			continue
+		}
+
+		// 规则标题
+		if strings.HasPrefix(trimmed, "## 规则 ") || strings.HasPrefix(trimmed, "## 规则:") {
+			if inRule {
+				result = append(result, `</div>`)
+			}
+			result = append(result, `<div class="tdd-rule-block">`)
+			result = append(result, `<div class="tdd-rule-name">`+trimmed+`</div>`)
+			inRule = true
+			continue
+		}
+
+		// 摘要
+		if strings.HasPrefix(trimmed, "## 摘要") {
+			if inRule {
+				result = append(result, `</div>`)
+				inRule = false
+			}
+			result = append(result, `<div class="arch-section-title">摘要</div>`)
+			continue
+		}
+
+		// Given/When/Then
+		if strings.HasPrefix(trimmed, "**Given:**") || strings.HasPrefix(trimmed, "**When:**") || strings.HasPrefix(trimmed, "**Then:**") {
+			result = append(result, `<div style="color: var(--accent); font-weight: 600; margin: 0.5rem 0;">`+trimmed+`</div>`)
+			continue
+		}
+
+		// 优先级
+		if strings.HasPrefix(trimmed, "**优先级:**") {
+			priority := strings.TrimPrefix(trimmed, "**优先级:** ")
+			priorityClass := "priority-medium"
+			if priority == "high" {
+				priorityClass = "priority-high"
+			} else if priority == "low" {
+				priorityClass = "priority-low"
+			}
+			result = append(result, `<div style="margin: 0.5rem 0;">优先级: <span class="tdd-rule-priority `+priorityClass+`">`+priority+`</span></div>`)
+			continue
+		}
+
+		// Tags
+		if strings.HasPrefix(trimmed, "**Tags:**") {
+			result = append(result, `<div style="color: var(--muted); font-size: 0.85rem;">`+trimmed+`</div>`)
+			continue
+		}
+
+		// 列表项
+		if strings.HasPrefix(trimmed, "- ") {
+			result = append(result, `<div style="padding-left: 1.5rem; color: var(--ink);">`+line+`</div>`)
+			continue
+		}
+
+		// 空行
+		if trimmed == "" {
+			result = append(result, "")
+			continue
+		}
+
+		// 普通文本
+		result = append(result, `<div style="color: var(--ink);">`+line+`</div>`)
+	}
+
+	if inRule {
+		result = append(result, `</div>`)
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// RenderVerificationReportHTML 渲染验收报告页面
+func RenderVerificationReportHTML(issue *domain.Issue, stageState *domain.StageState, report *domain.VerificationReport) string {
+	// 解析状态
+	state := issue.State
+	stateClass := common.StateBadgeClass(state)
+	stageDisplay := getStageDisplay(stageState.Name)
+
+	// 计算测试通过率
+	testPassRate := 0
+	if report != nil && report.TestResults != nil && report.TestResults.Total > 0 {
+		testPassRate = int(float64(report.TestResults.Passed) / float64(report.TestResults.Total) * 100)
+	}
+
+	// 计算BDD通过率
+	bddPassCount := 0
+	bddTotal := 0
+	if report != nil {
+		for _, bdd := range report.BDDValidation {
+			bddTotal++
+			if bdd.Status == "pass" {
+				bddPassCount++
+			}
+		}
+	}
+	bddPassRate := 0
+	if bddTotal > 0 {
+		bddPassRate = int(float64(bddPassCount) / float64(bddTotal) * 100)
+	}
+
+	// 判断是否显示操作按钮
+	showActions := stageState.Name == "verification" && (stageState.Status == "pending" || stageState.Status == "in_progress")
+
+	return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Symphony · 验收报告: ` + common.EscapeHTML(issue.Identifier) + `</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/dashboard.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10" crossorigin="anonymous"></script>
+    <style>
+    .verification-container {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .summary-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 1rem;
+    }
+    .summary-title {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-bottom: 0.5rem;
+    }
+    .summary-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--ink-bright);
+    }
+    .summary-detail {
+        font-size: 0.85rem;
+        color: var(--ink);
+        margin-top: 0.25rem;
+    }
+    .progress-bar-container {
+        margin-top: 0.5rem;
+        height: 8px;
+        background: var(--line);
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+    }
+    .progress-bar-fill {
+        height: 100%;
+        border-radius: var(--radius-sm);
+        transition: width 0.3s ease;
+    }
+    .pass-rate-high { background: #22c55e; }
+    .pass-rate-medium { background: #f59e0b; }
+    .pass-rate-low { background: #ef4444; }
+    .test-result-item, .bdd-result-item {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .status-pass { color: #22c55e; }
+    .status-fail { color: #ef4444; }
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--line);
+    }
+    .btn-approve {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(34, 197, 94, 0.7));
+        color: white;
+        border: none;
+        border-radius: var(--radius);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-approve:hover {
+        background: linear-gradient(135deg, rgba(34, 197, 94, 1), rgba(34, 197, 94, 0.9));
+        transform: translateY(-1px);
+    }
+    .btn-reject {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0.7));
+        color: white;
+        border: none;
+        border-radius: var(--radius);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-reject:hover {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 1), rgba(239, 68, 68, 0.9));
+        transform: translateY(-1px);
+    }
+    .btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: var(--surface);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+    .btn-back:hover {
+        background: var(--card);
+    }
+    .no-report {
+        text-align: center;
+        padding: 3rem;
+        color: var(--muted);
+    }
+    .no-report-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+    .reject-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    .reject-modal-content {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        max-width: 500px;
+        width: 90%;
+    }
+    .reject-reason-input {
+        width: 100%;
+        min-height: 100px;
+        padding: 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: var(--ink-bright);
+        font-size: 0.9rem;
+        resize: vertical;
+    }
+    .overall-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        font-weight: 600;
+    }
+    .status-badge-pass {
+        background: rgba(34, 197, 94, 0.2);
+        color: #22c55e;
+    }
+    .status-badge-fail {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+    }
+    </style>
+</head>
+<body>
+    <main class="app-shell">
+        <section class="dashboard-shell">
+            <header class="hero-card">
+                <div class="hero-grid">
+                    <div>
+                        <p class="eyebrow">Symphony Orchestrator</p>
+                        <h1 class="hero-title">验收报告: ` + common.EscapeHTML(issue.Identifier) + `</h1>
+                        <p class="hero-copy">` + common.EscapeHTML(issue.Title) + `</p>
+                    </div>
+                    <div class="status-stack">
+                        <a href="/api/v1/` + common.EscapeHTML(issue.Identifier) + `" class="btn-back" style="padding: 0.5rem 1rem;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                            返回任务详情
+                        </a>
+                    </div>
+                </div>
+            </header>
+
+            <section class="section-card" style="background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div>
+                        <h2 style="font-size: 1.1rem; font-weight: 600; color: var(--ink-bright);">` + common.EscapeHTML(issue.Title) + `</h2>
+                        <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.5rem;">
+                            <span class="` + stateClass + `">` + common.EscapeHTML(state) + `</span>
+                            <span style="color: var(--muted); font-size: 0.85rem;">阶段: ` + stageDisplay + `</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            ` + func() string {
+		if report == nil {
+			return `<section class="verification-container">
+                <div class="no-report">
+                    <div class="no-report-icon">📋</div>
+                    <p>暂无验收报告</p>
+                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">等待 AI 生成验收报告...</p>
+                </div>
+            </section>`
+		}
+		return renderVerificationReportContent(report, testPassRate, bddPassRate, bddPassCount, bddTotal)
+	}() + `
+
+            ` + func() string {
+		if showActions && report != nil {
+			return `<div class="action-buttons">
+                    <a href="/" class="btn-back">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="19" y1="12" x2="5" y2="12"></line>
+                            <polyline points="12 19 5 12 12 5"></polyline>
+                        </svg>
+                        返回看板
+                    </a>
+                    <button type="button" class="btn-approve" onclick="approveVerification()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        通过验收
+                    </button>
+                    <button type="button" class="btn-reject" onclick="showRejectModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        驳回验收
+                    </button>
+                </div>`
+		}
+		return ""
+	}() + `
+        </section>
+    </main>
+
+    ` + func() string {
+		if showActions && report != nil {
+			return `<!-- 驳回确认对话框 -->
+    <div id="reject-modal" class="reject-modal">
+        <div class="reject-modal-content">
+            <h3 style="font-size: 1.1rem; font-weight: 600; color: var(--ink-bright); margin-bottom: 1rem;">驳回验收</h3>
+            <p style="color: var(--ink); font-size: 0.9rem; margin-bottom: 1rem;">请输入驳回原因，任务将流转回实现中重新实现。</p>
+            <textarea id="reject-reason" class="reject-reason-input" placeholder="请描述需要修改的内容..."></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+                <button type="button" class="btn-back" onclick="hideRejectModal()">取消</button>
+                <button type="button" class="btn-reject" onclick="rejectVerification()">确认驳回</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function approveVerification() {
+        fetch('/api/v1/` + common.EscapeHTML(issue.Identifier) + `/verification/approve', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('验收通过，任务已完成' + (data.commit_hash ? '\\nCommit: ' + data.commit_hash : ''));
+                window.location.href = '/';
+            } else {
+                alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+            }
+        })
+        .catch(err => {
+            alert('操作失败: 网络错误');
+        });
+    }
+
+    function showRejectModal() {
+        document.getElementById('reject-modal').style.display = 'flex';
+    }
+
+    function hideRejectModal() {
+        document.getElementById('reject-modal').style.display = 'none';
+        document.getElementById('reject-reason').value = '';
+    }
+
+    function rejectVerification() {
+        const reason = document.getElementById('reject-reason').value.trim();
+
+        fetch('/api/v1/` + common.EscapeHTML(issue.Identifier) + `/verification/reject', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reason: reason })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('验收已驳回，任务流转回实现中');
+                window.location.href = '/api/v1/` + common.EscapeHTML(issue.Identifier) + `';
+            } else {
+                alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+            }
+        })
+        .catch(err => {
+            alert('操作失败: 网络错误');
+        });
+    }
+
+    // 点击模态框外部关闭
+    document.getElementById('reject-modal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            hideRejectModal();
+        }
+    });
+    </script>`
+		}
+		return ""
+	}() + `
+</body>
+</html>`
+}
+
+// renderVerificationReportContent 渲染验收报告内容
+func renderVerificationReportContent(report *domain.VerificationReport, testPassRate, bddPassRate, bddPassCount, bddTotal int) string {
+	// 确定状态样式
+	overallClass := "status-badge-pass"
+	if report.OverallStatus != "PASS" {
+		overallClass = "status-badge-fail"
+	}
+
+	// 获取进度条样式类
+	testBarClass := "pass-rate-high"
+	if testPassRate < 80 {
+		testBarClass = "pass-rate-medium"
+	}
+	if testPassRate < 50 {
+		testBarClass = "pass-rate-low"
+	}
+
+	bddBarClass := "pass-rate-high"
+	if bddPassRate < 80 {
+		bddBarClass = "pass-rate-medium"
+	}
+	if bddPassRate < 50 {
+		bddBarClass = "pass-rate-low"
+	}
+
+	return `<section class="verification-container">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+                        <path d="M9 12l2 2 4-4"></path>
+                        <circle cx="12" cy="12" r="10"></circle>
+                    </svg>
+                    <span style="font-weight: 600; color: var(--ink-bright); font-size: 1rem;">验收报告</span>
+                </div>
+                <span class="overall-status ` + overallClass + `">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        ` + func() string {
+		if report.OverallStatus == "PASS" {
+			return `<polyline points="20 6 9 17 4 12"></polyline>`
+		}
+		return `<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>`
+	}() + `
+                    </svg>
+                    ` + report.OverallStatus + `
+                </span>
+            </div>
+
+            <div style="margin-bottom: 1rem; color: var(--muted); font-size: 0.85rem;">
+                生成时间: ` + report.GeneratedAt.Format("2006-01-02 15:04:05") + `
+            </div>
+
+            <!-- 测试结果摘要 -->
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <div class="summary-title">测试结果</div>
+                    <div class="summary-value">` + strconv.Itoa(report.TestResults.Passed) + ` / ` + strconv.Itoa(report.TestResults.Total) + `</div>
+                    <div class="summary-detail">通过率: ` + strconv.Itoa(testPassRate) + `%</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill ` + testBarClass + `" style="width: ` + strconv.Itoa(testPassRate) + `%;"></div>
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--muted);">
+                        通过: ` + strconv.Itoa(report.TestResults.Passed) + ` | 失败: ` + strconv.Itoa(report.TestResults.Failed) + ` | 跳过: ` + strconv.Itoa(report.TestResults.Skipped) + `
+                    </div>
+                </div>
+
+                <div class="summary-card">
+                    <div class="summary-title">BDD 场景验证</div>
+                    <div class="summary-value">` + strconv.Itoa(bddPassCount) + ` / ` + strconv.Itoa(bddTotal) + `</div>
+                    <div class="summary-detail">通过率: ` + strconv.Itoa(bddPassRate) + `%</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill ` + bddBarClass + `" style="width: ` + strconv.Itoa(bddPassRate) + `%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            ` + func() string {
+		if len(report.TestResults.FailedTests) > 0 {
+			html := `<div style="margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 0.9rem; font-weight: 600; color: var(--ink-bright); margin-bottom: 0.75rem;">失败的测试</h3>`
+			for _, failed := range report.TestResults.FailedTests {
+				html += `<div class="test-result-item" style="background: rgba(239, 68, 68, 0.05);">
+                        <div>
+                            <div style="font-weight: 500; color: var(--ink-bright);">` + common.EscapeHTML(failed.TestName) + `</div>
+                            <div style="font-size: 0.8rem; color: #ef4444; margin-top: 0.25rem;">` + common.EscapeHTML(failed.ErrorMessage) + `</div>
+                        </div>
+                        <span class="status-fail">失败</span>
+                    </div>`
+			}
+			html += `</div>`
+			return html
+		}
+		return ""
+	}() + `
+
+            ` + func() string {
+		if len(report.BDDValidation) > 0 {
+			html := `<div style="margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 0.9rem; font-weight: 600; color: var(--ink-bright); margin-bottom: 0.75rem;">BDD 场景验证结果</h3>`
+			for _, bdd := range report.BDDValidation {
+				statusClass := "status-pass"
+				if bdd.Status != "pass" {
+					statusClass = "status-fail"
+				}
+				html += `<div class="bdd-result-item">
+                        <div>
+                            <div style="font-weight: 500; color: var(--ink-bright);">` + common.EscapeHTML(bdd.ScenarioName) + `</div>
+                            ` + func() string {
+					if bdd.Notes != "" {
+						return `<div style="font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem;">` + common.EscapeHTML(bdd.Notes) + `</div>`
+					}
+					return ""
+				}() + `
+                        </div>
+                        <span class="` + statusClass + `">` + bdd.Status + `</span>
+                    </div>`
+			}
+			html += `</div>`
+			return html
+		}
+		return ""
+	}() + `
+
+            ` + func() string {
+		if report.ImplementationSummary != "" {
+			return `<div style="margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 0.9rem; font-weight: 600; color: var(--ink-bright); margin-bottom: 0.75rem;">实现摘要</h3>
+                    <div style="background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 1rem;">
+                        <p style="color: var(--ink); font-size: 0.9rem; line-height: 1.6; white-space: pre-wrap;">` + common.EscapeHTML(report.ImplementationSummary) + `</p>
+                    </div>
+                </div>`
+		}
+		return ""
+	}() + `
+
+            ` + func() string {
+		if len(report.Recommendations) > 0 {
+			html := `<div style="margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 0.9rem; font-weight: 600; color: var(--ink-bright); margin-bottom: 0.75rem;">建议</h3>
+                    <ul style="list-style: disc; padding-left: 1.5rem; margin: 0;">`
+			for _, rec := range report.Recommendations {
+				html += `<li style="color: var(--ink); font-size: 0.9rem; margin-bottom: 0.5rem;">` + common.EscapeHTML(rec) + `</li>`
+			}
+			html += `</ul></div>`
+			return html
+		}
+		return ""
+	}() + `
+        </section>`
+}
+// RenderNeedsAttentionHTML 渲染待人工处理页面
+func RenderNeedsAttentionHTML(issue *domain.Issue, stageState *domain.StageState) string {
+	_ = common.StateBadgeClass(issue.State) // state class for potential future use
+
+	// 获取失败阶段显示名称
+	failedStageDisplay := getStageDisplay(stageState.Name)
+	
+	// 格式化失败时间
+	failedAtStr := "未知"
+	if stageState.FailedAt != nil {
+		failedAtStr = stageState.FailedAt.Format("2006-01-02 15:04:05")
+	}
+
+	return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Symphony · 待人工处理: ` + common.EscapeHTML(issue.Identifier) + `</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/dashboard.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10" crossorigin="anonymous"></script>
+    <style>
+    .needs-attention-container {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+    .failure-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: var(--radius);
+        margin-bottom: 1.5rem;
+    }
+    .failure-icon {
+        font-size: 2rem;
+        color: #ef4444;
+    }
+    .failure-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #ef4444;
+    }
+    .failure-subtitle {
+        font-size: 0.85rem;
+        color: var(--ink);
+        margin-top: 0.25rem;
+    }
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .detail-item {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 1rem;
+    }
+    .detail-label {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-bottom: 0.5rem;
+    }
+    .detail-value {
+        font-size: 1rem;
+        color: var(--ink-bright);
+        font-weight: 500;
+    }
+    .log-snippet {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        font-family: 'Fira Code', monospace;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+        overflow-x: auto;
+        color: var(--ink);
+    }
+    .suggestion-box {
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: var(--radius-sm);
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .suggestion-title {
+        font-size: 0.85rem;
+        color: #3b82f6;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .suggestion-content {
+        font-size: 0.9rem;
+        color: var(--ink);
+        line-height: 1.6;
+    }
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--line);
+    }
+    .btn-resume {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(34, 197, 94, 0.7));
+        color: white;
+        border: none;
+        border-radius: var(--radius);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-resume:hover {
+        background: linear-gradient(135deg, rgba(34, 197, 94, 1), rgba(34, 197, 94, 0.9));
+        transform: translateY(-1px);
+    }
+    .btn-reclarify {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(59, 130, 246, 0.7));
+        color: white;
+        border: none;
+        border-radius: var(--radius);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-reclarify:hover {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 1), rgba(59, 130, 246, 0.9));
+        transform: translateY(-1px);
+    }
+    .btn-abandon {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0.7));
+        color: white;
+        border: none;
+        border-radius: var(--radius);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-abandon:hover {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 1), rgba(239, 68, 68, 0.9));
+        transform: translateY(-1px);
+    }
+    .btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: var(--surface);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+    .btn-back:hover {
+        background: var(--card);
+    }
+    .confirm-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    .confirm-modal-content {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        max-width: 500px;
+        width: 90%;
+    }
+    .confirm-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--ink-bright);
+        margin-bottom: 1rem;
+    }
+    .confirm-message {
+        font-size: 0.9rem;
+        color: var(--ink);
+        margin-bottom: 1.5rem;
+    }
+    .confirm-buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+    }
+    </style>
+</head>
+<body>
+    <main class="app-shell">
+        <section class="dashboard-shell">
+            <header class="hero-card">
+                <div class="hero-grid">
+                    <div>
+                        <p class="eyebrow">Symphony Orchestrator</p>
+                        <h1 class="hero-title">待人工处理: ` + common.EscapeHTML(issue.Identifier) + `</h1>
+                        <p class="hero-copy">` + common.EscapeHTML(issue.Title) + `</p>
+                    </div>
+                    <div class="status-stack">
+                        <a href="/api/v1/` + common.EscapeHTML(issue.Identifier) + `" class="btn-back" style="padding: 0.5rem 1rem;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                            返回任务详情
+                        </a>
+                    </div>
+                </div>
+            </header>
+
+            <section class="needs-attention-container">
+                <div class="failure-header">
+                    <span class="failure-icon">&#x26A0;</span>
+                    <div>
+                        <div class="failure-title">任务执行失败，需要人工干预</div>
+                        <div class="failure-subtitle">已达到最大重试次数 (` + strconv.Itoa(stageState.RetryCount) + `/` + strconv.Itoa(stageState.RetryCount) + `)，无法自动恢复</div>
+                    </div>
+                </div>
+
+                <!-- 失败详情 -->
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <div class="detail-label">失败阶段</div>
+                        <div class="detail-value">` + failedStageDisplay + `</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">失败时间</div>
+                        <div class="detail-value">` + failedAtStr + `</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">错误类型</div>
+                        <div class="detail-value">` + common.EscapeHTML(stageState.ErrorType) + `</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">重试次数</div>
+                        <div class="detail-value">` + strconv.Itoa(stageState.RetryCount) + `</div>
+                    </div>
+                </div>
+
+                <!-- 错误消息 -->
+                <div class="detail-item" style="margin-bottom: 1.5rem;">
+                    <div class="detail-label">错误消息</div>
+                    <div class="detail-value" style="white-space: pre-wrap;">` + common.EscapeHTML(stageState.ErrorMessage) + `</div>
+                </div>
+
+                ` + func() string {
+		if stageState.LastLogSnippet != "" {
+			return `<div class="detail-label" style="margin-bottom: 0.5rem;">日志片段</div>
+                    <div class="log-snippet">` + common.EscapeHTML(stageState.LastLogSnippet) + `</div>`
+		}
+		return ""
+	}() + `
+
+                ` + func() string {
+		if stageState.Suggestion != "" {
+			return `<div class="suggestion-box">
+                    <div class="suggestion-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        修复建议
+                    </div>
+                    <div class="suggestion-content">` + common.EscapeHTML(stageState.Suggestion) + `</div>
+                </div>`
+		}
+		return ""
+	}() + `
+
+                <!-- 操作按钮 -->
+                <div class="action-buttons">
+                    <a href="/" class="btn-back">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="19" y1="12" x2="5" y2="12"></line>
+                            <polyline points="12 19 5 12 12 5"></polyline>
+                        </svg>
+                        返回看板
+                    </a>
+                    <button type="button" class="btn-resume" onclick="resumeTask()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-5.36L23 10"></path>
+                        </svg>
+                        重新执行
+                    </button>
+                    <button type="button" class="btn-reclarify" onclick="reclarifyTask()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        重新澄清需求
+                    </button>
+                    <button type="button" class="btn-abandon" onclick="showAbandonModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        放弃任务
+                    </button>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <!-- 放弃确认对话框 -->
+    <div id="abandon-modal" class="confirm-modal">
+        <div class="confirm-modal-content">
+            <h3 class="confirm-title">确认放弃任务</h3>
+            <p class="confirm-message">放弃任务将清理工作空间并将任务状态设置为"已取消"。此操作不可撤销，请确认是否继续。</p>
+            <div class="confirm-buttons">
+                <button type="button" class="btn-back" onclick="hideAbandonModal()">取消</button>
+                <button type="button" class="btn-abandon" onclick="abandonTask()">确认放弃</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function resumeTask() {
+        fetch('/api/tasks/` + common.EscapeHTML(issue.Identifier) + `/resume', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('任务已恢复执行，重试计数器已清零');
+                window.location.href = '/api/v1/` + common.EscapeHTML(issue.Identifier) + `';
+            } else {
+                alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+            }
+        })
+        .catch(err => {
+            alert('操作失败: 网络错误');
+        });
+    }
+
+    function reclarifyTask() {
+        fetch('/api/tasks/` + common.EscapeHTML(issue.Identifier) + `/reclarify', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('任务已流转至需求澄清阶段，BDD和架构设计已清除');
+                window.location.href = '/tasks/` + common.EscapeHTML(issue.Identifier) + `';
+            } else {
+                alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+            }
+        })
+        .catch(err => {
+            alert('操作失败: 网络错误');
+        });
+    }
+
+    function showAbandonModal() {
+        document.getElementById('abandon-modal').style.display = 'flex';
+    }
+
+    function hideAbandonModal() {
+        document.getElementById('abandon-modal').style.display = 'none';
+    }
+
+    function abandonTask() {
+        fetch('/api/tasks/` + common.EscapeHTML(issue.Identifier) + `/abandon', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('任务已放弃，工作空间已清理');
+                window.location.href = '/';
+            } else {
+                alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+            }
+        })
+        .catch(err => {
+            alert('操作失败: 网络错误');
+        });
+    }
+
+    // 点击模态框外部关闭
+    document.getElementById('abandon-modal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            hideAbandonModal();
+        }
+    });
+    </script>
+</body>
+</html>`
 }

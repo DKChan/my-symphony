@@ -331,23 +331,6 @@ func ParseClarificationResponse(response string) (*ClarificationResponse, error)
 	return &resp, nil
 }
 
-// cleanJSONResponse 清理 JSON 响应（去除 markdown 代码块等）
-func cleanJSONResponse(response string) string {
-	// 去除 markdown 代码块标记
-	response = strings.TrimSpace(response)
-
-	// 处理 ```json ... ``` 格式
-	if strings.HasPrefix(response, "```json") {
-		response = strings.TrimPrefix(response, "```json")
-		response = strings.TrimSuffix(response, "```")
-	} else if strings.HasPrefix(response, "```") {
-		response = strings.TrimPrefix(response, "```")
-		response = strings.TrimSuffix(response, "```")
-	}
-
-	return strings.TrimSpace(response)
-}
-
 // HandleUserResponseWithAgent 处理用户回答（使用AI Agent版本）
 // 将用户回答保存到对话历史，并重新调用 Agent 分析
 func (cm *ClarificationManager) HandleUserResponseWithAgent(
@@ -459,6 +442,3 @@ func (cm *ClarificationManager) GetQuestionsFromHistory(
 
 	return nil, nil
 }
-
-// ErrInvalidTask 无效任务错误
-var ErrInvalidTask = fmt.Errorf("invalid task")

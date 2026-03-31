@@ -872,7 +872,7 @@ func TestGetRoleLabel(t *testing.T) {
 
 // TestBuildPromptWithBDDConstraints 测试带 BDD 约束的提示词构建
 func TestBuildPromptWithBDDConstraints(t *testing.T) {
-	now := time.Now()
+	_ = time.Now() // 使用 time 包但不直接使用变量
 
 	tests := []struct {
 		name           string
