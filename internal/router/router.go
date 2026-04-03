@@ -9,6 +9,38 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// setupAPIHandler 创建并配置完整的 API Handler
+// 这是 Bug #3 的修复 - 正确初始化所有管理器
+func setupAPIHandler(orch *orchestrator.Orchestrator) *handlers.APIHandler {
+	// 获取必要的组件
+	cfg := orch.GetConfig()
+	tracker := orch.GetTracker()
+	workflowEngine := orch.GetWorkflowEngine()
+	workspaceMgr := orch.GetWorkspaceManager()
+
+	// 创建澄清管理器
+	clarificationMgr := workflow.NewClarificationManagerWithTracker(workflowEngine, cfg, tracker)
+
+	// 创建 BDD 审核管理器
+	bddReviewMgr := workflow.NewBDDReviewManagerWithTracker(workflowEngine, tracker)
+
+	// 创建架构审核管理器
+	architectureReviewMgr := workflow.NewArchitectureReviewManagerWithTracker(workflowEngine, tracker)
+
+	// 使用最完整的构造函数创建 API Handler
+	return handlers.NewAPIHandlerFull(
+		orch,                   // OrchestratorGetter
+		orch,                   // OrchestratorCanceler
+		clarificationMgr,       // ClarificationManager
+		bddReviewMgr,           // BDDReviewManager
+		architectureReviewMgr,  // ArchitectureReviewManager
+		nil,                    // VerificationManager (暂时为 nil，需要实现)
+		workspaceMgr,           // GitCommitter
+		nil,                    // NeedsAttentionManager (暂时为 nil，需要实现)
+		workspaceMgr,           // WorkspaceCleaner
+	)
+}
+
 // SetupRouter 设置所有路由
 func SetupRouter(orchestrator *orchestrator.Orchestrator, broadcaster *common.SSEBroadcaster, engine *gin.Engine) {
 	// 静态资源
@@ -43,8 +75,8 @@ func SetupRouter(orchestrator *orchestrator.Orchestrator, broadcaster *common.SS
 	sseHandler := handlers.NewSSEHandler(broadcaster)
 	engine.GET("/events", sseHandler.Handle)
 
-	// API 路由
-	apiHandler := handlers.NewAPIHandlerWithCanceler(orchestrator, orchestrator)
+	// API 路由 - 使用完整配置的 APIHandler
+	apiHandler := setupAPIHandler(orchestrator)
 	api := engine.Group("/api/v1")
 	{
 		api.GET("/state", apiHandler.HandleGetState)
@@ -133,8 +165,8 @@ func SetupRouterWithExecution(orchestrator *orchestrator.Orchestrator, broadcast
 	sseHandler := handlers.NewSSEHandler(broadcaster)
 	engine.GET("/events", sseHandler.Handle)
 
-	// API 路由
-	apiHandler := handlers.NewAPIHandlerWithCanceler(orchestrator, orchestrator)
+	// API 路由 - 使用完整配置的 APIHandler
+	apiHandler := setupAPIHandler(orchestrator)
 	api := engine.Group("/api/v1")
 	{
 		api.GET("/state", apiHandler.HandleGetState)

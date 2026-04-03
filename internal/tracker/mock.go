@@ -84,6 +84,11 @@ func (c *MockClient) FetchCandidateIssues(ctx context.Context, activeStates []st
 
 // FetchIssuesByStates 获取指定状态的问题
 func (c *MockClient) FetchIssuesByStates(ctx context.Context, states []string) ([]*domain.Issue, error) {
+	// 如果 states 为空或 nil，返回所有问题
+	if len(states) == 0 {
+		return c.issues, nil
+	}
+
 	stateSet := make(map[string]bool)
 	for _, s := range states {
 		stateSet[s] = true

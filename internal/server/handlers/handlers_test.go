@@ -436,8 +436,15 @@ func TestAPIHandler_ApproveBDD_BDDReviewNotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	// 没有 BDD 审核管理器，应该返回 500
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// BDD 审核管理器已注入，但工作流未初始化，应返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "workflow_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_RejectBDD_BDDReviewNotSupported(t *testing.T) {
@@ -456,8 +463,15 @@ func TestAPIHandler_RejectBDD_BDDReviewNotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	// 没有 BDD 审核管理器，应该返回 500
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// BDD 审核管理器已注入，但工作流未初始化，应返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "workflow_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_GetBDDReviewStatus_BDDReviewNotSupported(t *testing.T) {
@@ -473,8 +487,15 @@ func TestAPIHandler_GetBDDReviewStatus_BDDReviewNotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	// 没有 BDD 审核管理器，应该返回 500
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// BDD 审核管理器已注入，但工作流未初始化，应返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "workflow_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_ApproveBDD_TaskNotFound(t *testing.T) {
@@ -488,13 +509,15 @@ func TestAPIHandler_ApproveBDD_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	// 没有 BDDReviewManager，应该返回 500（功能不可用）
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// BDD 审核管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "task_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_RejectBDD_TaskNotFound(t *testing.T) {
@@ -510,13 +533,15 @@ func TestAPIHandler_RejectBDD_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	// 没有 BDDReviewManager，应该返回 500（功能不可用）
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// BDD 审核管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "task_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_GetBDDReviewStatus_TaskNotFound(t *testing.T) {
@@ -529,8 +554,15 @@ func TestAPIHandler_GetBDDReviewStatus_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	// 没有 BDDReviewManager，应该返回 500（功能不可用）
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// BDD 审核管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "task_not_found", errorObj["code"])
 }
 
 // ========== Epic 8: 异常处理与人工干预测试 ==========
@@ -790,14 +822,15 @@ func TestAPIHandler_SkipClarification_NotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 澄清管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
 	errorObj := response["error"].(map[string]interface{})
-	assert.Equal(t, "clarification_not_supported", errorObj["code"])
+	assert.Equal(t, "task_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_GetClarificationStatus_NotSupported(t *testing.T) {
@@ -810,14 +843,15 @@ func TestAPIHandler_GetClarificationStatus_NotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 澄清管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
 	errorObj := response["error"].(map[string]interface{})
-	assert.Equal(t, "clarification_not_supported", errorObj["code"])
+	assert.Equal(t, "task_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_SubmitAnswer_NotSupported(t *testing.T) {
@@ -837,14 +871,15 @@ func TestAPIHandler_SubmitAnswer_NotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 澄清管理器已注入，但工作流未初始化返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
 	errorObj := response["error"].(map[string]interface{})
-	assert.Equal(t, "clarification_not_supported", errorObj["code"])
+	assert.Equal(t, "workflow_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_SubmitAnswer_ValidationError(t *testing.T) {
@@ -876,8 +911,8 @@ func TestAPIHandler_SubmitAnswer_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	// 由于 clarificationManager 为空，会先返回 500（功能不可用）
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 澄清管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestAPIHandler_GetClarificationState_NotSupported(t *testing.T) {
@@ -890,14 +925,15 @@ func TestAPIHandler_GetClarificationState_NotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 澄清管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
 	errorObj := response["error"].(map[string]interface{})
-	assert.Equal(t, "clarification_not_supported", errorObj["code"])
+	assert.Equal(t, "task_not_found", errorObj["code"])
 }
 
 // ========== Epic 5: 架构审核相关测试 ==========
@@ -916,14 +952,15 @@ func TestAPIHandler_ApproveArchitecture_NotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 架构审核管理器已注入，但工作流未初始化返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
 	errorObj := response["error"].(map[string]interface{})
-	assert.Equal(t, "architecture_review_not_supported", errorObj["code"])
+	assert.Equal(t, "workflow_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_RejectArchitecture_NotSupported(t *testing.T) {
@@ -943,14 +980,15 @@ func TestAPIHandler_RejectArchitecture_NotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 架构审核管理器已注入，但工作流未初始化返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
 	errorObj := response["error"].(map[string]interface{})
-	assert.Equal(t, "architecture_review_not_supported", errorObj["code"])
+	assert.Equal(t, "workflow_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_GetArchitectureReviewStatus_NotSupported(t *testing.T) {
@@ -966,14 +1004,15 @@ func TestAPIHandler_GetArchitectureReviewStatus_NotSupported(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 架构审核管理器已注入，但工作流未初始化返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "error")
 	errorObj := response["error"].(map[string]interface{})
-	assert.Equal(t, "architecture_review_not_supported", errorObj["code"])
+	assert.Equal(t, "workflow_not_found", errorObj["code"])
 }
 
 func TestAPIHandler_ApproveArchitecture_TaskNotFound(t *testing.T) {
@@ -987,7 +1026,8 @@ func TestAPIHandler_ApproveArchitecture_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 架构审核管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestAPIHandler_RejectArchitecture_TaskNotFound(t *testing.T) {
@@ -1004,7 +1044,8 @@ func TestAPIHandler_RejectArchitecture_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 架构审核管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestAPIHandler_GetArchitectureReviewStatus_TaskNotFound(t *testing.T) {
@@ -1017,7 +1058,8 @@ func TestAPIHandler_GetArchitectureReviewStatus_TaskNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 架构审核管理器已注入，任务不存在返回 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // ========== Epic 7: 验收审核相关测试 ==========

@@ -156,6 +156,21 @@ func NewAPIHandlerWithNeedsAttention(orch OrchestratorGetter, canceler Orchestra
 	}
 }
 
+// NewAPIHandlerFull 创建完整功能的 API 处理器（包含所有管理器）
+func NewAPIHandlerFull(orch OrchestratorGetter, canceler OrchestratorCanceler, clarificationManager ClarificationManager, bddReviewManager BDDReviewManager, architectureReviewManager ArchitectureReviewManager, verificationManager VerificationManager, gitCommitter GitCommitter, needsAttentionManager NeedsAttentionManager, workspaceCleaner WorkspaceCleaner) *APIHandler {
+	return &APIHandler{
+		orchestrator:             orch,
+		canceler:                 canceler,
+		clarificationManager:     clarificationManager,
+		bddReviewManager:         bddReviewManager,
+		architectureReviewManager: architectureReviewManager,
+		verificationManager:      verificationManager,
+		gitCommitter:             gitCommitter,
+		needsAttentionManager:    needsAttentionManager,
+		workspaceCleaner:         workspaceCleaner,
+	}
+}
+
 // HandleGetState 处理获取状态的请求
 func (h *APIHandler) HandleGetState(c *gin.Context) {
 	state := h.orchestrator.GetState()

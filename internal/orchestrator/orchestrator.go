@@ -1036,6 +1036,11 @@ func (o *Orchestrator) GetWorkflowEngine() *workflow.Engine {
 	return o.workflowEngine
 }
 
+// GetConfig 获取配置
+func (o *Orchestrator) GetConfig() *config.Config {
+	return o.cfg
+}
+
 // GetWorkspaceManager 获取工作空间管理器
 func (o *Orchestrator) GetWorkspaceManager() *workspace.Manager {
 	return o.workspaceMgr

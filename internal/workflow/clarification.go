@@ -790,3 +790,82 @@ func (bm *BDDReviewManager) IsInBDDReviewStage(taskID string) (bool, error) {
 
 	return workflow.CurrentStage == StageBDDReview, nil
 }
+
+// =====================================================
+// ArchitectureReviewManager - 架构审核管理器
+// =====================================================
+
+// ArchitectureReviewManager 架构审核管理器
+type ArchitectureReviewManager struct {
+	engine  *Engine
+	tracker tracker.Tracker
+}
+
+// NewArchitectureReviewManager 创建新的架构审核管理器
+func NewArchitectureReviewManager(engine *Engine) *ArchitectureReviewManager {
+	return &ArchitectureReviewManager{
+		engine: engine,
+	}
+}
+
+// NewArchitectureReviewManagerWithTracker 创建带 tracker 的架构审核管理器
+func NewArchitectureReviewManagerWithTracker(engine *Engine, t tracker.Tracker) *ArchitectureReviewManager {
+	return &ArchitectureReviewManager{
+		engine:  engine,
+		tracker: t,
+	}
+}
+
+// SetTracker 设置 tracker（用于依赖注入）
+func (am *ArchitectureReviewManager) SetTracker(t tracker.Tracker) {
+	am.tracker = t
+}
+
+// ApproveArchitecture 通过架构设计审核
+// 状态流转: architecture_review (pending/in_progress) -> implementation (pending)
+func (am *ArchitectureReviewManager) ApproveArchitecture(taskID string) (*TaskWorkflow, error) {
+	return am.engine.ApproveArchitecture(taskID)
+}
+
+// RejectArchitecture 驳回架构设计审核
+// 状态流转: architecture_review (pending/in_progress) -> pending_design (pending)
+func (am *ArchitectureReviewManager) RejectArchitecture(taskID string, reason string) (*TaskWorkflow, error) {
+	return am.engine.RejectArchitecture(taskID, reason)
+}
+
+// GetArchitectureReviewStatus 获取架构审核状态
+func (am *ArchitectureReviewManager) GetArchitectureReviewStatus(taskID string) (*ArchitectureReviewStatus, error) {
+	return am.engine.GetArchitectureReviewStatus(taskID)
+}
+
+// CanApproveOrRejectArchitecture 判断是否可以进行架构审核操作
+// 仅在架构审核阶段进行中时可以审核
+func (am *ArchitectureReviewManager) CanApproveOrRejectArchitecture(taskID string) (bool, error) {
+	workflow := am.engine.GetWorkflow(taskID)
+	if workflow == nil {
+		return false, ErrWorkflowNotFound
+	}
+
+	// 必须在架构审核阶段
+	if workflow.CurrentStage != StageArchitectureReview {
+		return false, nil
+	}
+
+	archStage := workflow.Stages[StageArchitectureReview]
+	if archStage == nil {
+		return false, ErrInvalidStage
+	}
+
+	// 阶段必须是 pending 或 in_progress 状态
+	return archStage.Status == StatusPending || archStage.Status == StatusInProgress, nil
+}
+
+// IsInArchitectureReviewStage 判断任务是否在架构审核阶段
+func (am *ArchitectureReviewManager) IsInArchitectureReviewStage(taskID string) (bool, error) {
+	workflow := am.engine.GetWorkflow(taskID)
+	if workflow == nil {
+		return false, ErrWorkflowNotFound
+	}
+
+	return workflow.CurrentStage == StageArchitectureReview, nil
+}
