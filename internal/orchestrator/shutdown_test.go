@@ -24,6 +24,14 @@ func createShutdownTestConfig() *config.Config {
 	return cfg
 }
 
+// TestDefaultShutdownConfig 测试默认关闭配置
+func TestDefaultShutdownConfig(t *testing.T) {
+	cfg := DefaultShutdownConfig()
+	assert.NotNil(t, cfg)
+	assert.Equal(t, 30*time.Second, cfg.Timeout)
+	assert.Equal(t, ".symphony/shutdown_state.json", cfg.StateSavePath)
+}
+
 // TestNewShutdownManager 测试创建关闭管理器
 func TestNewShutdownManager(t *testing.T) {
 	cfg := createShutdownTestConfig()

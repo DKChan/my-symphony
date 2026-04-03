@@ -39,6 +39,7 @@ func ParseGherkin(content string) (*Feature, error) {
 	lines := strings.Split(content, "\n")
 	currentScenario := -1
 	inScenario := false
+	pendingTags := []string{} // 等待应用到下一个 Scenario 的 tags
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -76,8 +77,9 @@ func ParseGherkin(content string) (*Feature, error) {
 			scenario := Scenario{
 				Name:  scenarioName,
 				Steps: []Step{},
-				Tags:  []string{},
+				Tags:  pendingTags, // 应用之前收集的 tags
 			}
+			pendingTags = []string{} // 清空 pending tags
 			feature.Scenarios = append(feature.Scenarios, scenario)
 			currentScenario = len(feature.Scenarios) - 1
 			inScenario = true
@@ -91,8 +93,9 @@ func ParseGherkin(content string) (*Feature, error) {
 			scenario := Scenario{
 				Name:  scenarioName,
 				Steps: []Step{},
-				Tags:  []string{},
+				Tags:  pendingTags, // 应用之前收集的 tags
 			}
+			pendingTags = []string{} // 清空 pending tags
 			feature.Scenarios = append(feature.Scenarios, scenario)
 			currentScenario = len(feature.Scenarios) - 1
 			inScenario = true
@@ -101,7 +104,8 @@ func ParseGherkin(content string) (*Feature, error) {
 
 		// 解析 Tags
 		if strings.HasPrefix(trimmed, "@") && !inScenario {
-			// Feature 级别的 Tags，暂时忽略
+			// Scenario 级别的 Tags，保存到 pendingTags 等待下一个 Scenario
+			pendingTags = append(pendingTags, parseTags(trimmed)...)
 			continue
 		}
 		if strings.HasPrefix(trimmed, "@") && inScenario && currentScenario >= 0 {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dministrator/symphony/internal/common"
 	"github.com/dministrator/symphony/internal/domain"
 	"github.com/dministrator/symphony/internal/server/components"
 	"github.com/stretchr/testify/assert"
@@ -439,4 +440,200 @@ func TestRenderNeedsAttentionHTML_MaxRetries(t *testing.T) {
 	// 验证重试次数显示
 	assert.Contains(t, html, "已达到最大重试次数 (5/5)")
 	assert.Contains(t, html, "Final retry attempt failed")
+}
+
+// TestRenderFilterBar 测试 RenderFilterBar 函数
+func TestRenderFilterBar(t *testing.T) {
+	tests := []struct {
+		name         string
+		currentFilter string
+		wantContains []string
+	}{
+		{
+			name:         "empty filter",
+			currentFilter: "",
+			wantContains: []string{"filter-bar", "全部", "任务筛选"},
+		},
+		{
+			name:         "running filter",
+			currentFilter: "running",
+			wantContains: []string{"filter-bar", "进行中"},
+		},
+		{
+			name:         "retrying filter",
+			currentFilter: "retrying",
+			wantContains: []string{"filter-bar", "待人工处理"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			html := components.RenderFilterBar(tt.currentFilter)
+			for _, want := range tt.wantContains {
+				assert.Contains(t, html, want)
+			}
+		})
+	}
+}
+
+// TestRenderTaskList 测试 RenderTaskList 函数
+func TestRenderTaskList(t *testing.T) {
+	t.Run("empty list", func(t *testing.T) {
+		html := components.RenderTaskList([]common.TaskPayload{}, "")
+		assert.Contains(t, html, "task-list")
+	})
+
+	t.Run("with tasks", func(t *testing.T) {
+		tasks := []common.TaskPayload{
+			{
+				Identifier: "TEST-1",
+				Title:      "Task 1",
+				State:      "In Progress",
+			},
+		}
+		html := components.RenderTaskList(tasks, "")
+		assert.Contains(t, html, "TEST-1")
+		assert.Contains(t, html, "Task 1")
+	})
+}
+
+// TestRenderRunningCard 测试 RenderRunningCard 函数
+func TestRenderRunningCard(t *testing.T) {
+	now := time.Now()
+	entry := &domain.RunningEntry{
+		Identifier: "RUN-1",
+		StartedAt:  now.Add(-10 * time.Minute),
+		TurnCount:  5,
+		Issue: &domain.Issue{
+			ID:    "1",
+			Title: "Running Task",
+			State: "In Progress",
+		},
+		Session: &domain.LiveSession{
+			SessionID: "session-123",
+		},
+	}
+
+	html := components.RenderRunningCard(entry, now)
+	assert.Contains(t, html, "RUN-1")
+	assert.Contains(t, html, "In Progress")
+	assert.Contains(t, html, "session-123")
+	assert.Contains(t, html, "kanban-card")
+}
+
+// TestRenderRetryCard 测试 RenderRetryCard 函数
+func TestRenderRetryCard(t *testing.T) {
+	entry := &domain.RetryEntry{
+		Identifier: "RETRY-1",
+		Attempt:    2,
+		DueAtMs:    time.Now().Add(5 * time.Minute).UnixMilli(),
+	}
+
+	html := components.RenderRetryCard(entry)
+	assert.Contains(t, html, "RETRY-1")
+	assert.Contains(t, html, "Retry")
+}
+
+// TestRenderStageKanban 测试 RenderStageKanban 函数
+func TestRenderStageKanban(t *testing.T) {
+	payload := &common.KanbanPayload{
+		Columns: []common.KanbanColumn{
+			{
+				ID:    "clarification",
+				Title: "需求澄清",
+			},
+		},
+	}
+
+	html := components.RenderStageKanban(payload)
+	assert.Contains(t, html, "kanban")
+}
+
+// TestRenderStageKanbanScript 测试 RenderStageKanbanScript 函数
+func TestRenderStageKanbanScript(t *testing.T) {
+	html := components.RenderStageKanbanScript()
+	assert.Contains(t, html, "function")
+	assert.Contains(t, html, "task_update")
+}
+
+// TestRenderBDDReviewHTML 测试 RenderBDDReviewHTML 函数
+func TestRenderBDDReviewHTML(t *testing.T) {
+	issue := &domain.Issue{
+		ID:         "1",
+		Identifier: "BDD-1",
+		Title:      "BDD Review Task",
+		State:      "In Progress",
+	}
+
+	stageState := &domain.StageState{
+		Name:      "bdd_review",
+		Status:    "waiting_review",
+		StartedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	bddContent := "Feature: Login\n  Scenario: User logs in"
+
+	html := components.RenderBDDReviewHTML(issue, stageState, bddContent)
+	assert.Contains(t, html, "BDD-1")
+	assert.Contains(t, html, "BDD Review Task")
+	assert.Contains(t, html, "BDD 规则")
+	assert.Contains(t, html, "Feature: Login")
+}
+
+// TestRenderArchitectureReviewHTML 测试 RenderArchitectureReviewHTML 函数
+func TestRenderArchitectureReviewHTML(t *testing.T) {
+	issue := &domain.Issue{
+		ID:         "1",
+		Identifier: "ARCH-1",
+		Title:      "Architecture Review Task",
+		State:      "In Progress",
+	}
+
+	stageState := &domain.StageState{
+		Name:      "architecture_review",
+		Status:    "waiting_review",
+		StartedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	archContent := "# Architecture\n## Design"
+	tddContent := "# TDD Rules"
+
+	html := components.RenderArchitectureReviewHTML(issue, stageState, archContent, tddContent)
+	assert.Contains(t, html, "ARCH-1")
+	assert.Contains(t, html, "Architecture Review Task")
+	assert.Contains(t, html, "架构设计")
+	assert.Contains(t, html, "Architecture")
+}
+
+// TestRenderVerificationReportHTML 测试 RenderVerificationReportHTML 函数
+func TestRenderVerificationReportHTML(t *testing.T) {
+	issue := &domain.Issue{
+		ID:         "1",
+		Identifier: "VERIFY-1",
+		Title:      "Verification Task",
+		State:      "In Progress",
+	}
+
+	stageState := &domain.StageState{
+		Name:      "verification",
+		Status:    "waiting_review",
+		StartedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	report := &domain.VerificationReport{
+		TaskID:         "1",
+		TaskIdentifier: "VERIFY-1",
+		TaskTitle:      "Verification Task",
+		GeneratedAt:    time.Now(),
+		OverallStatus:  "PASS",
+		TestResults:    &domain.TestResults{Total: 10, Passed: 10, Failed: 0},
+	}
+
+	html := components.RenderVerificationReportHTML(issue, stageState, report)
+	assert.Contains(t, html, "VERIFY-1")
+	assert.Contains(t, html, "Verification Task")
+	assert.Contains(t, html, "验证")
 }

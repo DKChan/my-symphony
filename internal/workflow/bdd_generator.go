@@ -527,6 +527,7 @@ func ParseGherkinContent(content string) (*BDDRules, error) {
 
 	var currentScenario *BDDScenario
 	var currentSection string // "given", "when", "then"
+	var pendingTags []string  // 等待应用到下一个 Scenario 的 tags
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -552,17 +553,22 @@ func ParseGherkinContent(content string) (*BDDRules, error) {
 				Given: []string{},
 				When:  []string{},
 				Then:  []string{},
-				Tags:  []string{},
+				Tags:  pendingTags, // 应用之前收集的 tags
 			}
 			currentScenario.Name = strings.TrimSpace(currentScenario.Name)
+			pendingTags = []string{} // 清空 pending tags
 			currentSection = ""
 			continue
 		}
 
-		// Tags 行
+		// Tags 行（在 Scenario 之前）
 		if strings.HasPrefix(line, "@") {
 			if currentScenario != nil {
+				// Scenario 内部的 tags
 				currentScenario.Tags = append(currentScenario.Tags, line)
+			} else {
+				// Scenario 之前的 tags，保存到 pendingTags
+				pendingTags = append(pendingTags, line)
 			}
 			continue
 		}

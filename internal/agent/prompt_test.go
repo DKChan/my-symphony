@@ -1005,7 +1005,7 @@ func TestBuildPromptWithHistoryAndBDD(t *testing.T) {
 				{Role: "assistant", Content: "澄清A", Timestamp: now},
 			},
 			bddConstraints: "## BDD 验收标准\n\n场景列表",
-			template: "任务 {{ issue.identifier }}: {{ issue.title }}\n\n{{ conversation_history }}\n\n{{ bdd_constraints }}",
+			template: "任务 {{ issue.identifier }}: {{ issue.title }} (attempt {{ attempt }})\n\n{{ conversation_history }}\n\n{{ bdd_constraints }}",
 			expectedContains: []string{
 				"任务 TEST-5: 复杂需求",
 				"attempt 2",

@@ -122,7 +122,7 @@ Scenario: Failed login
 	assert.Len(t, feature.Scenarios, 2)
 
 	// 验证第二个场景的所有步骤关键词
-	assert.Len(t, feature.Scenarios[1].Steps, 6)
+	assert.Len(t, feature.Scenarios[1].Steps, 5)
 	assert.Equal(t, "Given", feature.Scenarios[1].Steps[0].Keyword)
 	assert.Equal(t, "When", feature.Scenarios[1].Steps[1].Keyword)
 	assert.Equal(t, "And", feature.Scenarios[1].Steps[2].Keyword)

@@ -73,14 +73,14 @@ development_status:
   4-2-web-页面查看-bdd-规则: done
   4-3-web-页面审核-bdd-规则: done
   4-4-审核通过规则作为约束条件: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 
   # Epic 5: 架构设计与 TDD 规则审核 (FR23, FR27-29)
   epic-5: done
   5-1-架构设计与-tdd-规则自动生成: done
   5-2-web-页面查看架构设计: done
   5-3-web-页面审核架构设计: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
   # Epic 6: AI Agent 执行与实时监控 (FR32-33, FR36-40, FR52-54)
   epic-6: done
@@ -90,7 +90,7 @@ development_status:
   6-4-web-页面查看执行日志: done
   6-5-执行错误检测与重试: done
   6-6-状态变化视觉反馈: done
-  epic-6-retrospective: optional
+  epic-6-retrospective: done
 
   # Epic 7: 验收报告与任务完成 (FR41-44, FR56)
   epic-7: done
@@ -98,7 +98,7 @@ development_status:
   7-2-验收报告-web-页面展示: done
   7-3-验收通过驳回状态流转: done
   7-4-任务完成后-git-提交: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
 
   # Epic 8: 异常处理与人工干预 (FR45-49)
   epic-8: done
@@ -106,7 +106,7 @@ development_status:
   8-2-失败详情展示与建议查看: done
   8-3-手动修复后继续执行: done
   8-4-需求重新澄清或放弃: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done
 
   # Epic 9: 服务可靠性与崩溃恢复 (FR51, NFR1, NFR3, NFR5)
   epic-9: done

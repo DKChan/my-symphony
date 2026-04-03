@@ -47,13 +47,24 @@ func NewConstraintManager(engine *Engine, workspaceRoot string) *ConstraintManag
 // 从工作空间中的 BDD 规则文件加载已审核通过的约束
 // 返回 BDD 约束集合，如果文件不存在则返回 nil
 func (cm *ConstraintManager) LoadBDDConstraints(taskID string) (*BDDConstraints, error) {
+	// 先检查缓存（优先级最高，避免不必要的文件/工作流检查）
+	if cached, exists := cm.constraints[taskID]; exists {
+		return cached, nil
+	}
+
 	// 获取工作流
 	workflow := cm.engine.GetWorkflow(taskID)
 	if workflow == nil {
 		return nil, ErrWorkflowNotFound
 	}
 
-	// 检查 BDD 评审阶段是否已完成
+	// 先查找 BDD 文件路径，如果不存在则直接返回 nil（无约束）
+	bddFilePath := cm.findBDDFile(taskID)
+	if bddFilePath == "" {
+		return nil, nil // 没有 BDD 文件，返回 nil 表示无约束
+	}
+
+	// BDD 文件存在时，检查 BDD 评审阶段是否已完成
 	bddStage := workflow.Stages[StageBDDReview]
 	if bddStage == nil {
 		return nil, ErrInvalidStage
@@ -62,17 +73,6 @@ func (cm *ConstraintManager) LoadBDDConstraints(taskID string) (*BDDConstraints,
 	// BDD 评审阶段必须是已完成状态
 	if bddStage.Status != StatusCompleted {
 		return nil, fmt.Errorf("BDD review stage not completed: status is %s", bddStage.Status)
-	}
-
-	// 检查缓存
-	if cached, exists := cm.constraints[taskID]; exists {
-		return cached, nil
-	}
-
-	// 查找 BDD 文件路径
-	bddFilePath := cm.findBDDFile(taskID)
-	if bddFilePath == "" {
-		return nil, nil // 没有 BDD 文件，返回 nil
 	}
 
 	// 加载 BDD 文件
@@ -544,6 +544,10 @@ func (cm *ConstraintManager) GetConstraintFilePathUnlocked(taskID string) string
 func (cm *ConstraintManager) GetBDDConstraintsForPrompt(taskID string) (string, error) {
 	constraints, err := cm.LoadBDDConstraints(taskID)
 	if err != nil {
+		// 如果工作流不存在或阶段未完成，返回空字符串（无约束）
+		if err == ErrWorkflowNotFound || err == ErrInvalidStage {
+			return "", nil
+		}
 		return "", err
 	}
 

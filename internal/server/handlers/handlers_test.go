@@ -776,3 +776,646 @@ func TestTaskHandler_NeedsAttentionPage_HTMXResponse(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "NA-HTMX-001")
 }
+
+// ========== Epic 3: 需求澄清相关测试 ==========
+
+func TestAPIHandler_SkipClarification_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/v1/CLARIFY-001/skip", nil)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "clarification_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_GetClarificationStatus_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/v1/CLARIFY-001/clarification", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "clarification_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_SubmitAnswer_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "ANSWER-001", Title: "Answer Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	reqBody := map[string]string{"answer": "这是测试回答"}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/api/tasks/ANSWER-001/answer", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "clarification_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_SubmitAnswer_ValidationError(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	// 测试缺少 answer 字段
+	req := httptest.NewRequest("POST", "/api/tasks/ANSWER-002/answer", nil)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPIHandler_SubmitAnswer_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	reqBody := map[string]string{"answer": "测试回答"}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/api/tasks/NONEXISTENT/answer", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// 由于 clarificationManager 为空，会先返回 500（功能不可用）
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_GetClarificationState_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/CLARIFY-001/clarification", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "clarification_not_supported", errorObj["code"])
+}
+
+// ========== Epic 5: 架构审核相关测试 ==========
+
+func TestAPIHandler_ApproveArchitecture_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "ARCH-001", Title: "Architecture Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/ARCH-001/architecture/approve", nil)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "architecture_review_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_RejectArchitecture_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "ARCH-002", Title: "Architecture Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	reqBody := map[string]string{"reason": "架构设计不符合预期"}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/api/tasks/ARCH-002/architecture/reject", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "architecture_review_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_GetArchitectureReviewStatus_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "ARCH-003", Title: "Architecture Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/ARCH-003/architecture", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "architecture_review_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_ApproveArchitecture_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/NONEXISTENT/architecture/approve", nil)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_RejectArchitecture_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	reqBody := map[string]string{"reason": "测试驳回"}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/api/tasks/NONEXISTENT/architecture/reject", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_GetArchitectureReviewStatus_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/NONEXISTENT/architecture", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ========== Epic 7: 验收审核相关测试 ==========
+
+func TestAPIHandler_ApproveVerification_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "VERIFY-001", Title: "Verification Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/VERIFY-001/verification/approve", nil)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "verification_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_RejectVerification_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "VERIFY-002", Title: "Verification Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	reqBody := map[string]string{"reason": "验收不通过"}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/api/tasks/VERIFY-002/verification/reject", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "verification_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_GetVerificationStatus_NotSupported(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "VERIFY-003", Title: "Verification Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/VERIFY-003/verification", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "verification_not_supported", errorObj["code"])
+}
+
+func TestAPIHandler_ApproveVerification_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("POST", "/api/tasks/NONEXISTENT/verification/approve", nil)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_RejectVerification_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	reqBody := map[string]string{"reason": "测试驳回"}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/api/tasks/NONEXISTENT/verification/reject", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAPIHandler_GetVerificationStatus_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/tasks/NONEXISTENT/verification", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ========== Epic 6: 执行监控相关测试 ==========
+
+func TestExecutionHandler_GetProgress_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/v1/NONEXISTENT/progress", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "task_not_found", errorObj["code"])
+}
+
+func TestExecutionHandler_GetLogs_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/v1/NONEXISTENT/logs", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "task_not_found", errorObj["code"])
+}
+
+func TestExecutionHandler_GetStatus_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/v1/NONEXISTENT/status", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "error")
+	errorObj := response["error"].(map[string]interface{})
+	assert.Equal(t, "task_not_found", errorObj["code"])
+}
+
+func TestExecutionHandler_GetProgress_Success(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "PROGRESS-001", Title: "Progress Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/v1/PROGRESS-001/progress", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "PROGRESS-001", response["identifier"])
+	assert.Contains(t, response, "current_stage")
+	assert.Contains(t, response, "status")
+}
+
+func TestExecutionHandler_GetLogs_Success(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "LOGS-001", Title: "Logs Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/v1/LOGS-001/logs", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "LOGS-001", response["identifier"])
+	assert.Contains(t, response, "logs")
+	assert.Contains(t, response, "total")
+}
+
+func TestExecutionHandler_GetStatus_Success(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "STATUS-001", Title: "Status Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/v1/STATUS-001/status", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "STATUS-001", response["identifier"])
+	assert.Contains(t, response, "title")
+	assert.Contains(t, response, "state")
+	assert.Contains(t, response, "stage")
+}
+
+func TestExecutionHandler_GetLogs_Pagination(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{ID: "1", Identifier: "LOGS-PAGE-001", Title: "Logs Pagination Task", State: "In Progress"},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/api/v1/LOGS-PAGE-001/logs?page=0&pageSize=50", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(0), response["page"])
+	assert.Equal(t, float64(50), response["page_size"])
+}
+
+// ========== Epic 5: 架构审核页面测试 ==========
+
+func TestTaskHandler_ArchitectureReviewPage_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/NONEXISTENT/architecture", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "任务不存在")
+}
+
+func TestTaskHandler_ArchitectureReviewPage_Success(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{
+			ID:          "1",
+			Identifier:  "ARCH-PAGE-001",
+			Title:       "架构审核任务",
+			Description: "这是一个架构审核测试任务",
+			State:       "In Progress",
+		},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/ARCH-PAGE-001/architecture", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, w.Body.String(), "架构设计审核")
+	assert.Contains(t, w.Body.String(), "ARCH-PAGE-001")
+}
+
+// ========== Epic 7: 验收报告页面测试 ==========
+
+func TestTaskHandler_VerificationPage_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/NONEXISTENT/verification", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "任务不存在")
+}
+
+func TestTaskHandler_VerificationPage_Success(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{
+			ID:          "1",
+			Identifier:  "VERIFY-PAGE-001",
+			Title:       "验收报告任务",
+			Description: "这是一个验收报告测试任务",
+			State:       "In Progress",
+		},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/VERIFY-PAGE-001/verification", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, w.Body.String(), "验收报告")
+	assert.Contains(t, w.Body.String(), "VERIFY-PAGE-001")
+}
+
+// ========== BDD 审核页面测试 ==========
+
+func TestTaskHandler_BDDReviewPage_TaskNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/NONEXISTENT/bdd", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "任务不存在")
+}
+
+func TestTaskHandler_BDDReviewPage_Success(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tracker.Kind = "mock"
+	cfg.Tracker.MockIssues = []config.MockIssueConfig{
+		{
+			ID:          "1",
+			Identifier:  "BDD-PAGE-001",
+			Title:       "BDD审核任务",
+			Description: "这是一个BDD审核测试任务",
+			State:       "In Progress",
+		},
+	}
+	orch := orchestrator.New(cfg, "")
+	engine := router.BuildRouter(orch)
+
+	req := httptest.NewRequest("GET", "/tasks/BDD-PAGE-001/bdd", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, w.Body.String(), "BDD 规则审核")
+	assert.Contains(t, w.Body.String(), "BDD-PAGE-001")
+}
+
+// Note: SSE Handler 测试不适用于单元测试
+// SSE 是长连接，会阻塞测试。应在集成测试中使用带有超时的测试。
