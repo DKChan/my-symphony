@@ -1,0 +1,293 @@
+{{ template "layout.html" . }}
+
+{{ define "extra-head" }}
+<style>
+.verification-container {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.summary-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1rem;
+    text-align: center;
+}
+.summary-value {
+    font-size: 2rem;
+    font-weight: 700;
+}
+.summary-label {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+.result-item {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+}
+.result-status-pass { color: #22c55e; }
+.result-status-fail { color: #ef4444; }
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+}
+.btn-approve {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(34, 197, 94, 0.7));
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    font-weight: 500;
+    cursor: pointer;
+}
+.btn-reject {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0.7));
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    font-weight: 500;
+    cursor: pointer;
+}
+.reject-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.reject-modal-content {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    max-width: 500px;
+    width: 90%;
+}
+.reject-reason-input {
+    width: 100%;
+    min-height: 100px;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--ink-bright);
+    font-size: 0.9rem;
+    resize: vertical;
+}
+.no-report {
+    text-align: center;
+    padding: 3rem;
+    color: var(--muted);
+}
+</style>
+{{ end }}
+
+{{ define "content" }}
+<section class="section-card" style="background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1.5rem;">
+    <div class="task-detail-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div>
+            <h2 style="font-size: 1.1rem; font-weight: 600; color: var(--ink-bright);">{{ with .Issue }}{{ .Title }}{{ end }}</h2>
+            <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.5rem;">
+                <span class="{{ .StateClass }}">{{ with .Issue }}{{ .State }}{{ end }}</span>
+                <span style="color: var(--muted); font-size: 0.85rem;">阶段: {{ .StageDisplay }}</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="verification-container">
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+            <path d="M9 12l2 2 4-4"></path>
+            <circle cx="12" cy="12" r="10"></circle>
+        </svg>
+        <span style="font-weight: 600; color: var(--ink-bright); font-size: 1rem;">验收报告</span>
+    </div>
+
+    {{ if .Report }}
+    <div class="summary-grid">
+        <div class="summary-card">
+            <div class="summary-value" style="color: {{ if gt .Report.TestResults.Passed 0 }}#22c55e{{ else }}var(--muted){{ end }};">{{ .Report.TestResults.Passed }}/{{ .Report.TestResults.Total }}</div>
+            <div class="summary-label">测试通过率 {{ .Report.TestResults.PassRate }}%</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value" style="color: {{ if gt .Report.BDDValidation.Passed 0 }}#22c55e{{ else }}var(--muted){{ end }};">{{ .Report.BDDValidation.Passed }}/{{ .Report.BDDValidation.Total }}</div>
+            <div class="summary-label">BDD 场景通过率 {{ .Report.BDDValidation.PassRate }}%</div>
+        </div>
+    </div>
+
+    {{ if .Report.TestResults.Failures }}
+    <div class="arch-section" style="margin-bottom: 1.5rem;">
+        <div class="arch-section-title" style="color: #ef4444;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+            失败的测试
+        </div>
+        {{ range .Report.TestResults.Failures }}
+        <div class="result-item">
+            <div style="font-weight: 600; color: var(--ink-bright);">{{ .Name }}</div>
+            <div style="color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem;">{{ .Error }}</div>
+        </div>
+        {{ end }}
+    </div>
+    {{ end }}
+
+    {{ if .Report.Recommendations }}
+    <div class="arch-section">
+        <div class="arch-section-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            建议
+        </div>
+        {{ range .Report.Recommendations }}
+        <div class="result-item">{{ . }}</div>
+        {{ end }}
+    </div>
+    {{ end }}
+
+    {{ if .Report.ImplementationSummary }}
+    <div class="arch-section">
+        <div class="arch-section-title">实现摘要</div>
+        <div class="result-item" style="white-space: pre-wrap;">{{ .Report.ImplementationSummary }}</div>
+    </div>
+    {{ end }}
+
+    {{ else }}
+    <div class="no-report">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📊</div>
+        <p>暂无验收报告</p>
+        <p style="font-size: 0.85rem; margin-top: 0.5rem;">等待验收测试完成...</p>
+    </div>
+    {{ end }}
+</section>
+
+{{ if and .Report (eq .StageState.Status "in_progress") }}
+<div class="action-buttons">
+    <a href="/" class="btn-back" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); font-weight: 500; text-decoration: none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        返回看板
+    </a>
+    <button type="button" class="btn-approve" onclick="approveVerification()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        通过验收
+    </button>
+    <button type="button" class="btn-reject" onclick="showRejectModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+        驳回验收
+    </button>
+</div>
+{{ end }}
+{{ end }}
+
+{{ define "modals" }}
+<div id="reject-modal" class="reject-modal">
+    <div class="reject-modal-content">
+        <h3 style="font-size: 1.1rem; font-weight: 600; color: var(--ink-bright); margin-bottom: 1rem;">驳回验收</h3>
+        <p style="color: var(--ink); font-size: 0.9rem; margin-bottom: 1rem;">请输入驳回原因。</p>
+        <textarea id="reject-reason" class="reject-reason-input" placeholder="请描述需要修改的内容..."></textarea>
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+            <button type="button" class="btn-back" onclick="hideRejectModal()" style="padding: 0.5rem 1rem; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer;">取消</button>
+            <button type="button" class="btn-reject" onclick="rejectVerification()">确认驳回</button>
+        </div>
+    </div>
+</div>
+{{ end }}
+
+{{ define "page-script" }}
+<script>
+function approveVerification() {
+    fetch('/api/tasks/{{ .Issue.Identifier }}/verification/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('验收已通过');
+            window.location.href = '/tasks/{{ .Issue.Identifier }}';
+        } else {
+            alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+        }
+    })
+    .catch(err => alert('操作失败: 网络错误'));
+}
+
+function showRejectModal() {
+    document.getElementById('reject-modal').style.display = 'flex';
+}
+
+function hideRejectModal() {
+    document.getElementById('reject-modal').style.display = 'none';
+    document.getElementById('reject-reason').value = '';
+}
+
+function rejectVerification() {
+    const reason = document.getElementById('reject-reason').value.trim();
+    if (!reason) {
+        alert('请输入驳回原因');
+        return;
+    }
+    fetch('/api/tasks/{{ .Issue.Identifier }}/verification/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('验收已驳回');
+            window.location.href = '/tasks/{{ .Issue.Identifier }}';
+        } else {
+            alert('操作失败: ' + (data.error ? data.error.message : '未知错误'));
+        }
+    })
+    .catch(err => alert('操作失败: 网络错误'));
+}
+
+document.getElementById('reject-modal').addEventListener('click', function(e) {
+    if (e.target === this) hideRejectModal();
+});
+</script>
+{{ end }}

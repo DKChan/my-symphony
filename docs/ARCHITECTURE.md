@@ -29,7 +29,6 @@ symphony/
 │   │   └── static/        # 静态资源
 │   ├── tracker/           # 问题跟踪器客户端
 │   │   ├── tracker.go     # Tracker 接口定义
-│   │   ├── linear.go      # Linear GraphQL 客户端
 │   │   ├── github.go      # GitHub API 客户端
 │   │   └── mock.go        # 测试用 Mock 客户端
 │   ├── workflow/          # 工作流加载器

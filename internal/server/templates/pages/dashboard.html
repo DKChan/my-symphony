@@ -1,0 +1,84 @@
+{{ define "dashboard-page" }}
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Symphony · {{ .Title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/dashboard.css">
+    <style>
+    .status-badge-live { display: inline-flex; }
+    .status-badge-offline { display: none; }
+    body.hx-connected .status-badge-live { display: inline-flex; }
+    body.hx-connected .status-badge-offline { display: none; }
+    body:not(.hx-connected) .status-badge-live { display: none; }
+    body:not(.hx-connected) .status-badge-offline { display: inline-flex; }
+    </style>
+</head>
+<body>
+    <main class="app-shell">
+        <section class="dashboard-shell" style="min-height: calc(100vh - 3rem);">
+            <header class="hero-card">
+                <div class="hero-grid">
+                    <div>
+                        <p class="eyebrow">Symphony Orchestrator</p>
+                        <h1 class="hero-title">{{ .Title }}</h1>
+                        {{ if .HeroCopy }}<p class="hero-copy">{{ .HeroCopy }}</p>{{ end }}
+                    </div>
+                    <div class="status-stack">
+                        <a href="/tasks/new" class="create-task-btn" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: var(--accent); color: white; border-radius: var(--radius); text-decoration: none; font-weight: 500; font-size: 0.9rem;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            创建需求
+                        </a>
+                        <span class="status-badge status-badge-live" id="live-indicator">
+                            <span class="status-badge-dot"></span>
+                            Live
+                        </span>
+                        <span class="status-badge status-badge-offline">
+                            <span class="status-badge-dot"></span>
+                            Offline
+                        </span>
+                    </div>
+                </div>
+            </header>
+
+            <section class="stage-kanban-container" id="stage-kanban">
+                {{ .KanbanHTML }}
+            </section>
+        </section>
+    </main>
+
+    <script src="https://unpkg.com/htmx.org@1.9.10" crossorigin="anonymous"></script>
+    <script>
+    // SSE 实时更新
+    const eventSource = new EventSource('/events');
+    let lastTaskCount = 0;
+
+    eventSource.addEventListener('state', function(e) {
+        document.body.classList.add('hx-connected');
+        try {
+            const data = JSON.parse(e.data);
+            const newCount = (data.counts?.running || 0) + (data.counts?.retrying || 0);
+            if (newCount !== lastTaskCount) {
+                lastTaskCount = newCount;
+                location.reload();
+            }
+        } catch (err) {
+            console.error('Failed to parse SSE data:', err);
+        }
+    });
+
+    eventSource.onerror = function(e) {
+        console.error('SSE connection error:', e);
+        document.body.classList.remove('hx-connected');
+    };
+    </script>
+</body>
+</html>
+{{ end }}

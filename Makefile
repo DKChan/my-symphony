@@ -19,7 +19,7 @@ run: build
 
 ## run-dev: 使用开发配置运行服务
 run-dev: build
-	./$(BINARY_NAME) -workflow ./WORKFLOW_example.md -port 8080
+	./$(BINARY_NAME) -workflow ./WORKFLOW_mock.md -port 8080
 
 ## test: 运行所有测试
 test:

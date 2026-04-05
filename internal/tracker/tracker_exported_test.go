@@ -48,28 +48,13 @@ func TestNewTracker(t *testing.T) {
 			wantType: "*tracker.GitHubClient",
 		},
 		{
-			name: "linear tracker (default)",
+			name: "unknown kind defaults to mock",
 			cfg: &config.Config{
 				Tracker: config.TrackerConfig{
-					Kind:        "linear",
-					Endpoint:    "https://api.linear.app",
-					APIKey:      "test-key",
-					ProjectSlug: "test-project",
+					Kind: "unknown",
 				},
 			},
-			wantType: "*tracker.LinearClient",
-		},
-		{
-			name: "unknown kind defaults to linear",
-			cfg: &config.Config{
-				Tracker: config.TrackerConfig{
-					Kind:        "unknown",
-					Endpoint:    "https://api.linear.app",
-					APIKey:      "test-key",
-					ProjectSlug: "test-project",
-				},
-			},
-			wantType: "*tracker.LinearClient",
+			wantType: "*tracker.MockClient",
 		},
 	}
 
@@ -118,19 +103,6 @@ func TestNewGitHubClient(t *testing.T) {
 	})
 }
 
-// TestNewLinearClient 测试 NewLinearClient 构造函数
-func TestNewLinearClient(t *testing.T) {
-	t.Run("creates client with valid params", func(t *testing.T) {
-		client := NewLinearClient("https://api.linear.app", "test-api-key", "project-slug")
-		assert.NotNil(t, client, "NewLinearClient should return non-nil client")
-	})
-
-	t.Run("creates client with empty params", func(t *testing.T) {
-		client := NewLinearClient("", "", "")
-		assert.NotNil(t, client, "NewLinearClient should handle empty params")
-	})
-}
-
 // getZeroValueForType 返回类型名称对应的零值，用于 assert.IsType
 func getZeroValueForType(typeName string) interface{} {
 	switch typeName {
@@ -140,8 +112,6 @@ func getZeroValueForType(typeName string) interface{} {
 		return &BeadsClient{}
 	case "*tracker.GitHubClient":
 		return &GitHubClient{}
-	case "*tracker.LinearClient":
-		return &LinearClient{}
 	default:
 		return nil
 	}

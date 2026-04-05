@@ -11,8 +11,8 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	cfg := config.DefaultConfig()
 
-	if cfg.Tracker.Kind != "linear" {
-		t.Errorf("expected tracker kind 'linear', got %s", cfg.Tracker.Kind)
+	if cfg.Tracker.Kind != "mock" {
+		t.Errorf("expected tracker kind 'mock', got %s", cfg.Tracker.Kind)
 	}
 
 	if cfg.Polling.IntervalMs != 30000 {
@@ -36,9 +36,9 @@ func TestDefaultConfig(t *testing.T) {
 func TestParseConfig(t *testing.T) {
 	raw := map[string]any{
 		"tracker": map[string]any{
-			"kind":          "linear",
+			"kind":          "github",
 			"api_key":       "$TEST_API_KEY",
-			"project_slug":  "TEST-PROJECT",
+			"repo":          "owner/repo",
 			"active_states": []any{"Todo", "In Progress"},
 		},
 		"polling": map[string]any{
@@ -62,8 +62,8 @@ func TestParseConfig(t *testing.T) {
 		t.Errorf("expected resolved API key 'test-key-123', got %s", cfg.Tracker.APIKey)
 	}
 
-	if cfg.Tracker.ProjectSlug != "TEST-PROJECT" {
-		t.Errorf("expected project slug 'TEST-PROJECT', got %s", cfg.Tracker.ProjectSlug)
+	if cfg.Tracker.Repo != "owner/repo" {
+		t.Errorf("expected repo 'owner/repo', got %s", cfg.Tracker.Repo)
 	}
 
 	if cfg.Polling.IntervalMs != 60000 {
@@ -85,12 +85,15 @@ func TestValidateDispatchConfig(t *testing.T) {
 			name: "valid config",
 			config: &config.Config{
 				Tracker: config.TrackerConfig{
-					Kind:         "linear",
-					APIKey:       "test-key",
-					ProjectSlug:  "TEST",
+					Kind:    "github",
+					APIKey:  "test-key",
+					Repo:    "owner/repo",
 				},
 				Codex: config.CodexConfig{
 					Command: "codex app-server",
+				},
+				Harness: config.HarnessConfig{
+					MaxIterations: 5,
 				},
 			},
 			wantValid: true,
@@ -99,8 +102,8 @@ func TestValidateDispatchConfig(t *testing.T) {
 			name: "missing tracker kind",
 			config: &config.Config{
 				Tracker: config.TrackerConfig{
-					APIKey:      "test-key",
-					ProjectSlug: "TEST",
+					APIKey: "test-key",
+					Repo:   "owner/repo",
 				},
 				Codex: config.CodexConfig{
 					Command: "codex app-server",
@@ -112,8 +115,8 @@ func TestValidateDispatchConfig(t *testing.T) {
 			name: "missing api key",
 			config: &config.Config{
 				Tracker: config.TrackerConfig{
-					Kind:        "linear",
-					ProjectSlug: "TEST",
+					Kind: "github",
+					Repo: "owner/repo",
 				},
 				Codex: config.CodexConfig{
 					Command: "codex app-server",
@@ -122,10 +125,10 @@ func TestValidateDispatchConfig(t *testing.T) {
 			wantValid: false,
 		},
 		{
-			name: "missing project slug",
+			name: "missing repo",
 			config: &config.Config{
 				Tracker: config.TrackerConfig{
-					Kind:    "linear",
+					Kind:    "github",
 					APIKey:  "test-key",
 				},
 				Codex: config.CodexConfig{
@@ -138,9 +141,9 @@ func TestValidateDispatchConfig(t *testing.T) {
 			name: "unsupported tracker kind",
 			config: &config.Config{
 				Tracker: config.TrackerConfig{
-					Kind:         "jira",
-					APIKey:       "test-key",
-					ProjectSlug:  "TEST",
+					Kind:    "jira",
+					APIKey:  "test-key",
+					Repo:    "owner/repo",
 				},
 				Codex: config.CodexConfig{
 					Command: "codex app-server",
@@ -273,6 +276,9 @@ func TestValidateSymphonyConfig(t *testing.T) {
 				Execution: config.ExecutionConfig{
 					MaxRetries: 3,
 				},
+				Harness: config.HarnessConfig{
+					MaxIterations: 5,
+				},
 			},
 			wantValid: true,
 		},
@@ -390,5 +396,296 @@ func TestValidateSymphonyConfig(t *testing.T) {
 				t.Errorf("expected valid=%v, got valid=%v, errors=%v", tt.wantValid, validation.Valid, validation.Errors)
 			}
 		})
+	}
+}
+
+// 5.4 测试 Harness 配置解析
+func TestDefaultConfig_HarnessDefaults(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	// 测试 Harness 默认值
+	if cfg.Harness.MaxIterations != 5 {
+		t.Errorf("expected harness.max_iterations 5, got %d", cfg.Harness.MaxIterations)
+	}
+
+	if !cfg.Harness.BMAD.Enabled {
+		t.Error("expected harness.bmad.enabled to be true by default")
+	}
+
+	// 默认 agents 应包含分组
+	if len(cfg.Harness.BMAD.Agents.Planner) != 3 {
+		t.Errorf("expected harness.bmad.agents.planner to have 3 agents, got %d", len(cfg.Harness.BMAD.Agents.Planner))
+	}
+	if len(cfg.Harness.BMAD.Agents.Generator) != 2 {
+		t.Errorf("expected harness.bmad.agents.generator to have 2 agents, got %d", len(cfg.Harness.BMAD.Agents.Generator))
+	}
+	if len(cfg.Harness.BMAD.Agents.Evaluator) != 2 {
+		t.Errorf("expected harness.bmad.agents.evaluator to have 2 agents, got %d", len(cfg.Harness.BMAD.Agents.Evaluator))
+	}
+}
+
+func TestParseConfig_HarnessMaxIterations(t *testing.T) {
+	tests := []struct {
+		name           string
+		rawConfig      map[string]any
+		expectedValue  int
+	}{
+		{
+			name: "parse max_iterations from int",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"max_iterations": 10,
+				},
+			},
+			expectedValue: 10,
+		},
+		{
+			name: "parse max_iterations from string",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"max_iterations": "15",
+				},
+			},
+			expectedValue: 15,
+		},
+		{
+			name: "missing harness uses default",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+			},
+			expectedValue: 5, // default value
+		},
+		{
+			name: "invalid max_iterations uses default",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"max_iterations": -1,
+				},
+			},
+			expectedValue: 5, // default value (negative ignored)
+		},
+		{
+			name: "zero max_iterations uses default",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"max_iterations": 0,
+				},
+			},
+			expectedValue: 5, // default value (zero ignored)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := config.ParseConfig(tt.rawConfig)
+			if err != nil {
+				t.Fatalf("failed to parse config: %v", err)
+			}
+
+			if cfg.Harness.MaxIterations != tt.expectedValue {
+				t.Errorf("expected harness.max_iterations %d, got %d", tt.expectedValue, cfg.Harness.MaxIterations)
+			}
+		})
+	}
+}
+
+func TestParseConfig_HarnessBMADEnabled(t *testing.T) {
+	tests := []struct {
+		name           string
+		rawConfig      map[string]any
+		expectedValue  bool
+	}{
+		{
+			name: "bmad enabled true",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"bmad": map[string]any{
+						"enabled": true,
+					},
+				},
+			},
+			expectedValue: true,
+		},
+		{
+			name: "bmad enabled false",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"bmad": map[string]any{
+						"enabled": false,
+					},
+				},
+			},
+			expectedValue: false,
+		},
+		{
+			name: "missing bmad uses default true",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+			},
+			expectedValue: true, // default is true
+		},
+		{
+			name: "missing enabled field uses default",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"bmad": map[string]any{},
+				},
+			},
+			expectedValue: true, // default is true
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := config.ParseConfig(tt.rawConfig)
+			if err != nil {
+				t.Fatalf("failed to parse config: %v", err)
+			}
+
+			if cfg.Harness.BMAD.Enabled != tt.expectedValue {
+				t.Errorf("expected harness.bmad.enabled %v, got %v", tt.expectedValue, cfg.Harness.BMAD.Enabled)
+			}
+		})
+	}
+}
+
+func TestParseConfig_HarnessBMADAgents(t *testing.T) {
+	tests := []struct {
+		name              string
+		rawConfig         map[string]any
+		expectedPlanner   []string
+		expectedGenerator []string
+		expectedEvaluator []string
+	}{
+		{
+			name: "parse grouped agents",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"bmad": map[string]any{
+						"agents": map[string]any{
+							"planner":   []any{"agent-pm", "agent-qa"},
+							"generator": []any{"agent-dev"},
+							"evaluator": []any{"agent-review"},
+						},
+					},
+				},
+			},
+			expectedPlanner:   []string{"agent-pm", "agent-qa"},
+			expectedGenerator: []string{"agent-dev"},
+			expectedEvaluator: []string{"agent-review"},
+		},
+		{
+			name: "partial agents config uses defaults for missing groups",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"bmad": map[string]any{
+						"agents": map[string]any{
+							"planner": []any{"agent-pm"},
+						},
+					},
+				},
+			},
+			expectedPlanner:   []string{"agent-pm"},  // custom
+			expectedGenerator: []string{"bmad-agent-qa", "bmad-agent-dev"},  // defaults
+			expectedEvaluator: []string{"bmad-code-review", "bmad-editorial-review-prose"},  // defaults
+		},
+		{
+			name: "missing agents field uses defaults",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+				"harness": map[string]any{
+					"bmad": map[string]any{
+						"enabled": true,
+					},
+				},
+			},
+			expectedPlanner:   []string{"bmad-agent-pm", "bmad-agent-qa", "bmad-agent-architect"},
+			expectedGenerator: []string{"bmad-agent-qa", "bmad-agent-dev"},
+			expectedEvaluator: []string{"bmad-code-review", "bmad-editorial-review-prose"},
+		},
+		{
+			name: "missing bmad section uses defaults",
+			rawConfig: map[string]any{
+				"tracker": map[string]any{"kind": "mock"},
+			},
+			expectedPlanner:   []string{"bmad-agent-pm", "bmad-agent-qa", "bmad-agent-architect"},
+			expectedGenerator: []string{"bmad-agent-qa", "bmad-agent-dev"},
+			expectedEvaluator: []string{"bmad-code-review", "bmad-editorial-review-prose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := config.ParseConfig(tt.rawConfig)
+			if err != nil {
+				t.Fatalf("failed to parse config: %v", err)
+			}
+
+			// Compare planner agents
+			if len(cfg.Harness.BMAD.Agents.Planner) != len(tt.expectedPlanner) {
+				t.Errorf("expected %d planner agents, got %d", len(tt.expectedPlanner), len(cfg.Harness.BMAD.Agents.Planner))
+			}
+			// Compare generator agents
+			if len(cfg.Harness.BMAD.Agents.Generator) != len(tt.expectedGenerator) {
+				t.Errorf("expected %d generator agents, got %d", len(tt.expectedGenerator), len(cfg.Harness.BMAD.Agents.Generator))
+			}
+			// Compare evaluator agents
+			if len(cfg.Harness.BMAD.Agents.Evaluator) != len(tt.expectedEvaluator) {
+				t.Errorf("expected %d evaluator agents, got %d", len(tt.expectedEvaluator), len(cfg.Harness.BMAD.Agents.Evaluator))
+			}
+		})
+	}
+}
+
+func TestParseConfig_HarnessComplete(t *testing.T) {
+	raw := map[string]any{
+		"tracker": map[string]any{
+			"kind": "mock",
+		},
+		"harness": map[string]any{
+			"max_iterations": 7,
+			"bmad": map[string]any{
+				"enabled": true,
+				"agents": map[string]any{
+					"planner":   []any{"bmad-agent-pm", "bmad-agent-qa"},
+					"generator": []any{"bmad-agent-dev"},
+					"evaluator": []any{"bmad-code-review"},
+				},
+			},
+		},
+	}
+
+	cfg, err := config.ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("failed to parse config: %v", err)
+	}
+
+	// Verify complete harness config
+	if cfg.Harness.MaxIterations != 7 {
+		t.Errorf("expected harness.max_iterations 7, got %d", cfg.Harness.MaxIterations)
+	}
+
+	if !cfg.Harness.BMAD.Enabled {
+		t.Error("expected harness.bmad.enabled to be true")
+	}
+
+	// Verify grouped agents
+	if len(cfg.Harness.BMAD.Agents.Planner) != 2 {
+		t.Errorf("expected 2 planner agents, got %d", len(cfg.Harness.BMAD.Agents.Planner))
+	}
+	if len(cfg.Harness.BMAD.Agents.Generator) != 1 {
+		t.Errorf("expected 1 generator agent, got %d", len(cfg.Harness.BMAD.Agents.Generator))
+	}
+	if len(cfg.Harness.BMAD.Agents.Evaluator) != 1 {
+		t.Errorf("expected 1 evaluator agent, got %d", len(cfg.Harness.BMAD.Agents.Evaluator))
 	}
 }

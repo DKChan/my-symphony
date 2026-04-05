@@ -102,7 +102,7 @@ func NewTracker(cfg *config.Config) Tracker {
 	case "beads":
 		return NewBeadsClient()
 	default:
-		// 默认 linear
-		return NewLinearClient(cfg.Tracker.Endpoint, cfg.Tracker.APIKey, cfg.Tracker.ProjectSlug)
+		// 默认 mock
+		return NewMockClient(nil)
 	}
 }

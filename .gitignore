@@ -47,7 +47,9 @@ Thumbs.db
 WORKFLOW.md
 main
 symphony
+temp/
 
 .codebuddy/
 _bmad/
 .opencode/
+.sym/

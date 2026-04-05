@@ -1,0 +1,151 @@
+{{ template "layout.html" . }}
+
+{{ define "content" }}
+<section class="section-card" style="background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1.5rem;">
+    <div class="task-detail-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div>
+            <h2 style="font-size: 1.25rem; font-weight: 600; color: var(--ink-bright); margin-bottom: 0.5rem;">{{ with .Issue }}{{ .Title }}{{ end }}</h2>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <span class="{{ .StateClass }}">{{ with .Issue }}{{ .State }}{{ end }}</span>
+                <span style="color: var(--muted); font-size: 0.85rem;">阶段: {{ .StageDisplay }}</span>
+                <span style="color: var(--muted); font-size: 0.85rem;">状态: {{ .StatusDisplay }}</span>
+                {{ if .ElapsedDisplay }}
+                <span style="color: var(--muted); font-size: 0.85rem;">已用时间: <span class="mono">{{ .ElapsedDisplay }}</span></span>
+                {{ end }}
+            </div>
+        </div>
+
+        {{ if or .IsImplementation .IsNeedsAttention .IsVerification }}
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="/tasks/{{ .Issue.Identifier }}/logs" class="btn-secondary" style="padding: 0.5rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--ink); font-size: 0.85rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>
+                执行日志
+            </a>
+        </div>
+        {{ end }}
+    </div>
+
+    <!-- 澄清阶段进度 -->
+    {{ if eq .StageState.Name "clarification" }}
+    <div class="progress-section" style="background: var(--surface); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: var(--ink); font-weight: 500;">澄清进度</span>
+            <span class="mono" style="color: var(--accent);">第 {{ .RoundProgress }} 轮</span>
+        </div>
+        <div class="progress-bar" style="margin-top: 0.5rem; height: 6px; background: var(--line); border-radius: var(--radius-sm);">
+            <div class="progress-bar-fill" style="height: 100%; width: {{ mul .CurrentRound 20 }}%; background: var(--accent); border-radius: var(--radius-sm);"></div>
+        </div>
+    </div>
+    {{ end }}
+
+    <!-- 实现阶段进度 -->
+    {{ if .IsImplementation }}
+    <div class="progress-section" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05)); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: var(--radius-lg); padding: 1rem; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: var(--ink); font-weight: 500;">实现进度</span>
+            <span class="mono" style="color: var(--accent);">{{ .ElapsedDisplay }}</span>
+        </div>
+        <div style="margin-top: 0.75rem; color: var(--ink-bright); font-size: 0.9rem;">正在执行...</div>
+    </div>
+    {{ end }}
+
+    <!-- 需要人工处理 -->
+    {{ if .IsNeedsAttention }}
+    <div class="progress-section" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05)); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-lg); padding: 1rem; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--danger);">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <span style="color: var(--danger); font-weight: 600;">需要人工处理</span>
+        </div>
+        <div style="color: var(--ink); font-size: 0.9rem; margin-top: 0.5rem;">此任务在执行过程中遇到问题，需要人工干预。</div>
+        {{ if .StageState.Error }}
+        <div style="margin-top: 0.75rem; background: var(--surface); border-radius: var(--radius-sm); padding: 0.75rem;">
+            <span style="color: var(--muted); font-size: 0.85rem;">错误信息:</span>
+            <pre style="color: var(--danger); font-size: 0.85rem; margin: 0.25rem 0 0 0; white-space: pre-wrap;">{{ .StageState.Error }}</pre>
+        </div>
+        {{ end }}
+        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+            <button onclick="resumeTask()" style="padding: 0.5rem 1rem; border: 1px solid var(--accent); border-radius: var(--radius); background: transparent; color: var(--accent); cursor: pointer;">继续执行</button>
+            <button onclick="reclarifyTask()" style="padding: 0.5rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--ink); cursor: pointer;">重新澄清</button>
+            <button onclick="abandonTask()" style="padding: 0.5rem 1rem; border: 1px solid var(--danger); border-radius: var(--radius); background: transparent; color: var(--danger); cursor: pointer;">放弃任务</button>
+        </div>
+    </div>
+    {{ end }}
+
+    <!-- AI 问题区域 -->
+    {{ if and .IsWaitingForAnswer .CurrentQuestion }}
+    <div class="ai-question-section" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05)); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span style="font-weight: 600; color: var(--accent);">AI 当前问题</span>
+        </div>
+        <p style="color: var(--ink-bright); font-size: 1rem; line-height: 1.6;">{{ .CurrentQuestion }}</p>
+        <form id="answer-form" hx-post="/api/tasks/{{ .Issue.Identifier }}/answer" hx-target="#answer-result" hx-swap="innerHTML" style="margin-top: 1rem;">
+            <div style="margin-bottom: 0.75rem;">
+                <textarea id="answer-input" name="answer" rows="3" required style="width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--ink-bright); font-size: 1rem; resize: vertical;" placeholder="输入您的回答..."></textarea>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+                <button type="submit" class="btn-primary" style="padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius); background: var(--accent); color: white; font-weight: 500; cursor: pointer;">提交回答</button>
+                <button type="button" class="btn-secondary" onclick="skipClarification()" style="padding: 0.75rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--muted); cursor: pointer;">跳过澄清</button>
+            </div>
+        </form>
+        <div id="answer-result" style="margin-top: 1rem;"></div>
+    </div>
+    {{ else }}
+    <div class="ai-question-section" style="background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--muted);">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span style="font-weight: 600; color: var(--muted);">AI 问题</span>
+        </div>
+        <p style="color: var(--muted); font-size: 1rem;">当前任务不在澄清阶段，或尚未收到 AI 提问。</p>
+    </div>
+    {{ end }}
+
+    <!-- 对话历史 -->
+    {{ if .Conversation }}
+    {{ .ConversationHTML }}
+    {{ end }}
+</section>
+{{ end }}
+
+{{ define "page-script" }}
+<script>
+function skipClarification() {
+    fetch('/api/tasks/{{ .Issue.Identifier }}/skip', { method: 'POST' })
+        .then(() => location.reload());
+}
+
+function resumeTask() {
+    fetch('/api/tasks/{{ .Issue.Identifier }}/resume', { method: 'POST' })
+        .then(() => location.reload());
+}
+
+function reclarifyTask() {
+    fetch('/api/tasks/{{ .Issue.Identifier }}/reclarify', { method: 'POST' })
+        .then(() => location.reload());
+}
+
+function abandonTask() {
+    if (confirm('确认放弃任务 {{ .Issue.Identifier }}？')) {
+        fetch('/api/tasks/{{ .Issue.Identifier }}/abandon', { method: 'POST' })
+            .then(() => location.href = '/');
+    }
+}
+</script>
+{{ end }}

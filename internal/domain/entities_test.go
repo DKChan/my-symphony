@@ -13,7 +13,7 @@ func TestIssueFields(t *testing.T) {
 	desc := "Test description"
 	priority := 1
 	branch := "feature/test"
-	url := "https://linear.app/issue/TEST-1"
+	url := "https://github.com/owner/repo/issues/1"
 
 	issue := &domain.Issue{
 		ID:          "abc123",
@@ -61,7 +61,7 @@ func TestWorkflowDefinition(t *testing.T) {
 	def := &domain.WorkflowDefinition{
 		Config: map[string]any{
 			"tracker": map[string]any{
-				"kind": "linear",
+				"kind": "github",
 			},
 		},
 		PromptTemplate: "# Task\n\nPlease work on this.",

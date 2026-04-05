@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Symphony · {{ .Title }}</title>
+    {{ template "partials/head.html" . }}
+    {{ block "extra-head" . }}{{ end }}
+</head>
+<body>
+    <main class="app-shell">
+        <section class="dashboard-shell">
+            {{ template "partials/hero-header.html" . }}
+
+            <!-- 页面内容区域 -->
+            {{ if eq .PageName "dashboard" }}
+                {{ template "pages/dashboard.html" . }}
+            {{ else if eq .PageName "task-detail" }}
+                {{ template "pages/task-detail.html" . }}
+            {{ else if eq .PageName "bdd-review" }}
+                {{ template "pages/bdd-review.html" . }}
+            {{ else if eq .PageName "architecture-review" }}
+                {{ template "pages/architecture-review.html" . }}
+            {{ else if eq .PageName "verification-report" }}
+                {{ template "pages/verification-report.html" . }}
+            {{ else if eq .PageName "needs-attention" }}
+                {{ template "pages/needs-attention.html" . }}
+            {{ else if eq .PageName "error" }}
+                {{ template "pages/error.html" . }}
+            {{ else }}
+                {{ block "content" . }}{{ end }}
+            {{ end }}
+        </section>
+    </main>
+
+    {{ block "modals" . }}{{ end }}
+
+    {{ template "partials/scripts.html" . }}
+    {{ block "page-script" . }}{{ end }}
+</body>
+</html>

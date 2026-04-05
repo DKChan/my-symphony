@@ -1,0 +1,25 @@
+<!-- 公共脚本占位 -->
+{{ if .NeedsSSE }}
+<script>
+// SSE 实时更新
+(function() {
+    const eventSource = new EventSource('/events');
+
+    eventSource.addEventListener('state', function(e) {
+        document.body.classList.add('hx-connected');
+        try {
+            const data = JSON.parse(e.data);
+            if (typeof updateDashboard === 'function') {
+                updateDashboard(data);
+            }
+        } catch (err) {
+            console.error('Failed to parse SSE data:', err);
+        }
+    });
+
+    eventSource.onerror = function() {
+        document.body.classList.remove('hx-connected');
+    };
+})();
+</script>
+{{ end }}

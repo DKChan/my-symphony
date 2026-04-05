@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/dministrator/symphony/internal/config"
@@ -18,6 +19,13 @@ type InitOptions struct {
 	AgentType   string
 	ProjectPath string
 	NonInteractive bool
+
+	// ProjectName 配置项目名称
+	ProjectName string
+	// BMADEnabled 控制 BMAD Agent 的启用状态
+	BMADEnabled *bool
+	// MaxIterations 设置 P-G-E 架构的最大迭代次数，默认 5
+	MaxIterations int
 }
 
 // InitCommand 实现 symphony init 命令
@@ -59,15 +67,23 @@ func (c *InitCommand) Run() error {
 	}
 
 	// 收集用户输入
+	// 1. 项目名称配置
+	projectName := c.options.ProjectName
+	if projectName == "" && !c.options.NonInteractive {
+		projectName = c.promptInput("请输入项目名称", "my-project")
+	}
+
+	// 2. Tracker 类型选择
 	trackerType := c.options.TrackerType
 	if trackerType == "" {
 		trackerType = c.promptSelect(
 			"请选择 Tracker 类型",
-			[]string{"linear", "github", "mock", "beads"},
-			"mock",
+			[]string{"github", "mock", "beads"},
+			"beads",
 		)
 	}
 
+	// 3. Agent 类型选择
 	agentType := c.options.AgentType
 	if agentType == "" {
 		agentType = c.promptSelect(
@@ -77,11 +93,31 @@ func (c *InitCommand) Run() error {
 		)
 	}
 
+	// 4. BMAD Agent 启用/禁用选择
+	bmadEnabled := true // 默认值
+	if c.options.BMADEnabled != nil {
+		bmadEnabled = *c.options.BMADEnabled
+	} else if !c.options.NonInteractive {
+		bmadEnabled = c.promptConfirm("是否启用 BMAD Agent?", true)
+	}
+
+	// 5. 如果 BMAD 启用，配置最大迭代次数
+	maxIterations := c.options.MaxIterations
+	if maxIterations == 0 {
+		maxIterations = 5 // 默认值
+		if bmadEnabled && !c.options.NonInteractive {
+			maxIterationsStr := c.promptInput("请输入最大迭代次数", "5")
+			if val, err := strconv.Atoi(maxIterationsStr); err == nil && val > 0 {
+				maxIterations = val
+			}
+		}
+	}
+
 	// 收集 tracker 特定配置
 	trackerConfig := c.collectTrackerConfig(trackerType)
 
 	// 生成配置
-	cfg := c.generateConfig(trackerType, agentType, trackerConfig)
+	cfg := c.generateConfig(projectName, trackerType, agentType, bmadEnabled, maxIterations, trackerConfig)
 
 	// 创建目录结构
 	if err := c.createDirectoryStructure(symDir, cfg); err != nil {
@@ -106,10 +142,9 @@ func (c *InitCommand) Run() error {
 
 // trackerConfigData 包含 tracker 特定配置数据
 type trackerConfigData struct {
-	apiKey      string
-	projectSlug string
-	repo        string
-	endpoint    string
+	apiKey   string
+	repo     string
+	endpoint string
 }
 
 // collectTrackerConfig 收集 tracker 特定配置
@@ -117,12 +152,6 @@ func (c *InitCommand) collectTrackerConfig(trackerType string) *trackerConfigDat
 	data := &trackerConfigData{}
 
 	switch trackerType {
-	case "linear":
-		fmt.Println("\nLinear Tracker 配置:")
-		data.apiKey = c.promptInput("请输入 Linear API Key (或设置 LINEAR_API_KEY 环境变量)", "")
-		data.projectSlug = c.promptInput("请输入 Project Slug", "")
-		data.endpoint = "https://api.linear.app/graphql"
-
 	case "github":
 		fmt.Println("\nGitHub Tracker 配置:")
 		data.apiKey = c.promptInput("请输入 GitHub Token (或设置 GITHUB_TOKEN 环境变量)", "")
@@ -141,8 +170,13 @@ func (c *InitCommand) collectTrackerConfig(trackerType string) *trackerConfigDat
 }
 
 // generateConfig 生成配置
-func (c *InitCommand) generateConfig(trackerType, agentType string, trackerData *trackerConfigData) *config.Config {
+func (c *InitCommand) generateConfig(projectName, trackerType, agentType string, bmadEnabled bool, maxIterations int, trackerData *trackerConfigData) *config.Config {
 	cfg := config.DefaultConfig()
+
+	// 更新项目名称
+	if projectName != "" {
+		cfg.Workspace.ProjectName = projectName
+	}
 
 	// 更新 tracker 配置
 	cfg.Tracker.Kind = trackerType
@@ -152,15 +186,18 @@ func (c *InitCommand) generateConfig(trackerType, agentType string, trackerData 
 	if trackerData.apiKey != "" {
 		cfg.Tracker.APIKey = trackerData.apiKey
 	}
-	if trackerData.projectSlug != "" {
-		cfg.Tracker.ProjectSlug = trackerData.projectSlug
-	}
 	if trackerData.repo != "" {
 		cfg.Tracker.Repo = trackerData.repo
 	}
 
 	// 更新 agent 配置
 	cfg.Agent.Kind = agentType
+
+	// 更新 harness 配置
+	cfg.Harness.MaxIterations = maxIterations
+	cfg.Harness.BMAD.Enabled = bmadEnabled
+	// 使用架构规范定义的默认 agents（已在 DefaultConfig 中设置）
+	// 用户可通过配置文件自定义各阶段 agent
 
 	return cfg
 }
@@ -217,12 +254,11 @@ func (c *InitCommand) generateConfigYAML(symDir string, cfg *config.Config) erro
 
 // buildConfigMap 构建配置映射（用于 YAML 序列化）
 func (c *InitCommand) buildConfigMap(cfg *config.Config) map[string]interface{} {
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"tracker": map[string]interface{}{
 			"kind":            cfg.Tracker.Kind,
 			"endpoint":        cfg.Tracker.Endpoint,
 			"api_key":         c.maskAPIKey(cfg.Tracker.APIKey),
-			"project_slug":    cfg.Tracker.ProjectSlug,
 			"repo":            cfg.Tracker.Repo,
 			"active_states":   cfg.Tracker.ActiveStates,
 			"terminal_states": cfg.Tracker.TerminalStates,
@@ -231,7 +267,8 @@ func (c *InitCommand) buildConfigMap(cfg *config.Config) map[string]interface{} 
 			"interval_ms": cfg.Polling.IntervalMs,
 		},
 		"workspace": map[string]interface{}{
-			"root": cfg.Workspace.Root,
+			"root":          cfg.Workspace.Root,
+			"project_name":  cfg.Workspace.ProjectName,
 		},
 		"hooks": map[string]interface{}{
 			"timeout_ms": cfg.Hooks.TimeoutMs,
@@ -242,6 +279,17 @@ func (c *InitCommand) buildConfigMap(cfg *config.Config) map[string]interface{} 
 			"max_turns":               cfg.Agent.MaxTurns,
 			"max_retry_backoff_ms":    cfg.Agent.MaxRetryBackoffMs,
 			"max_concurrent_agents_by_state": cfg.Agent.MaxConcurrentAgentsByState,
+		},
+		"harness": map[string]interface{}{
+			"max_iterations": cfg.Harness.MaxIterations,
+			"bmad": map[string]interface{}{
+				"enabled": cfg.Harness.BMAD.Enabled,
+				"agents": map[string]interface{}{
+					"planner":   cfg.Harness.BMAD.Agents.Planner,
+					"generator": cfg.Harness.BMAD.Agents.Generator,
+					"evaluator": cfg.Harness.BMAD.Agents.Evaluator,
+				},
+			},
 		},
 		"clarification": map[string]interface{}{
 			"max_rounds": 5,
@@ -256,6 +304,8 @@ func (c *InitCommand) buildConfigMap(cfg *config.Config) map[string]interface{} 
 			"stall_timeout_ms": cfg.Codex.StallTimeoutMs,
 		},
 	}
+
+	return result
 }
 
 // maskAPIKey 遮蔽 API Key（如果存在）

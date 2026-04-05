@@ -64,7 +64,7 @@ type githubIssue struct {
 }
 
 // toDomain 将 GitHub Issue 转换为领域模型
-// GitHub 没有 Linear 的"状态"概念，使用 label 映射状态
+// GitHub 使用 label 映射状态
 // 约定：label 名称 = 状态名（如 "Todo"、"In Progress"、"Done"）
 func (gi githubIssue) toDomain(owner, repo string) *domain.Issue {
 	id := fmt.Sprintf("%d", gi.Number)

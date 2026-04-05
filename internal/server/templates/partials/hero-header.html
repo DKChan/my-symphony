@@ -1,0 +1,35 @@
+<!-- Hero Card Header -->
+<header class="hero-card">
+    <div class="hero-grid">
+        <div>
+            <p class="eyebrow">Symphony Orchestrator</p>
+            <h1 class="hero-title"{{ if .TitleStyle }} style="{{ .TitleStyle }}"{{ end }}>{{ .Title }}</h1>
+            {{ if .HeroCopy }}<p class="hero-copy">{{ .HeroCopy }}</p>{{ end }}
+        </div>
+
+        {{ if .ShowBackButton }}
+        <div class="status-stack">
+            <a href="{{ .BackURL }}" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--ink); text-decoration: none; font-weight: 500; font-size: 0.9rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                {{ .BackText }}
+            </a>
+
+            {{ if .StatusBadge }}
+            <span class="{{ .StatusBadge.Class }}" id="{{ .StatusBadge.ID }}">
+                {{ if .StatusBadge.ShowDot }}<span class="status-badge-dot"></span>{{ end }}
+                {{ .StatusBadge.Text }}
+            </span>
+            {{ end }}
+        </div>
+        {{ end }}
+
+        {{ if .ActionButtonsHTML }}
+        <div class="status-stack">
+            {{ .ActionButtonsHTML }}
+        </div>
+        {{ end }}
+    </div>
+</header>

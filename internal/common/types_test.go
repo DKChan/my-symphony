@@ -851,22 +851,18 @@ func TestSSEBroadcasterBroadcastTaskUpdate(t *testing.T) {
 
 // TestKanbanStages 测试看板阶段配置
 func TestKanbanStages(t *testing.T) {
-	// 验证阶段数量
-	if len(KanbanStages) != 9 {
-		t.Errorf("expected 9 stages, got %d", len(KanbanStages))
+	// 验证阶段数量 (5列: 未开始、规划器、生成器、评估器、已完成)
+	if len(KanbanStages) != 5 {
+		t.Errorf("expected 5 stages, got %d", len(KanbanStages))
 	}
 
 	// 验证阶段顺序
 	expectedOrder := []string{
 		"backlog",
-		"clarification",
-		"bdd_review",
-		"architecture_review",
-		"implementation",
-		"verification",
-		"completed",
-		"needs_attention",
-		"cancelled",
+		"planner",
+		"generator",
+		"evaluator",
+		"done",
 	}
 
 	for i, stage := range KanbanStages {
@@ -882,6 +878,39 @@ func TestKanbanStages(t *testing.T) {
 	}
 }
 
+// TestTaskStageToKanbanColumn 测试任务阶段到看板列的映射
+func TestTaskStageToKanbanColumn(t *testing.T) {
+	tests := []struct {
+		taskStage    string
+		expectedCol  string
+	}{
+		// 规划器阶段
+		{"clarification", "planner"},
+		{"bdd_review", "planner"},
+		{"architecture_review", "planner"},
+		// 生成器阶段
+		{"implementation", "generator"},
+		{"testing", "generator"},
+		// 评估器阶段
+		{"verification", "evaluator"},
+		{"review", "evaluator"},
+		// 已完成
+		{"completed", "done"},
+		{"cancelled", "done"},
+		{"needs_attention", "done"},
+		// 默认
+		{"unknown", "backlog"},
+		{"", "backlog"},
+	}
+
+	for _, tt := range tests {
+		result := TaskStageToKanbanColumn(tt.taskStage)
+		if result != tt.expectedCol {
+			t.Errorf("TaskStageToKanbanColumn(%q) = %q, want %q", tt.taskStage, result, tt.expectedCol)
+		}
+	}
+}
+
 // TestGetKanbanStageConfig 测试获取看板阶段配置
 func TestGetKanbanStageConfig(t *testing.T) {
 	tests := []struct {
@@ -893,37 +922,43 @@ func TestGetKanbanStageConfig(t *testing.T) {
 		{
 			name:          "backlog",
 			stageID:       "backlog",
-			expectedTitle: "待开始",
+			expectedTitle: "未开始",
 			expectedColor: "#6b7280",
 		},
 		{
-			name:          "implementation",
-			stageID:       "implementation",
-			expectedTitle: "实现中",
-			expectedColor: "#22d3ee",
+			name:          "planner",
+			stageID:       "planner",
+			expectedTitle: "规划器",
+			expectedColor: "#ffd43b",
 		},
 		{
-			name:          "completed",
-			stageID:       "completed",
-			expectedTitle: "完成",
-			expectedColor: "#4ade80",
+			name:          "generator",
+			stageID:       "generator",
+			expectedTitle: "生成器",
+			expectedColor: "#339af0",
 		},
 		{
-			name:          "needs_attention",
-			stageID:       "needs_attention",
-			expectedTitle: "待人工处理",
-			expectedColor: "#f87171",
+			name:          "evaluator",
+			stageID:       "evaluator",
+			expectedTitle: "评估器",
+			expectedColor: "#da77f2",
+		},
+		{
+			name:          "done",
+			stageID:       "done",
+			expectedTitle: "已完成",
+			expectedColor: "#51cf66",
 		},
 		{
 			name:          "unknown stage - defaults to backlog",
 			stageID:       "unknown_stage",
-			expectedTitle: "待开始",
+			expectedTitle: "未开始",
 			expectedColor: "#6b7280",
 		},
 		{
 			name:          "empty stage - defaults to backlog",
 			stageID:       "",
-			expectedTitle: "待开始",
+			expectedTitle: "未开始",
 			expectedColor: "#6b7280",
 		},
 	}

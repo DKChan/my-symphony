@@ -405,8 +405,8 @@ func TestParseConfigEdgeCases(t *testing.T) {
 					t.Fatal("expected non-nil config")
 				}
 				// 应该使用默认值
-				if cfg.Tracker.Kind != "linear" {
-					t.Errorf("expected default tracker kind 'linear', got %s", cfg.Tracker.Kind)
+				if cfg.Tracker.Kind != "mock" {
+					t.Errorf("expected default tracker kind 'mock', got %s", cfg.Tracker.Kind)
 				}
 			},
 		},
@@ -652,6 +652,9 @@ func TestValidateDispatchConfigGitHub(t *testing.T) {
 				Codex: config.CodexConfig{
 					Command: "codex app-server",
 				},
+				Harness: config.HarnessConfig{
+					MaxIterations: 5,
+				},
 			},
 			expected: true,
 		},
@@ -664,6 +667,9 @@ func TestValidateDispatchConfigGitHub(t *testing.T) {
 				},
 				Codex: config.CodexConfig{
 					Command: "codex app-server",
+				},
+				Harness: config.HarnessConfig{
+					MaxIterations: 5,
 				},
 			},
 			expected: false,
@@ -678,6 +684,9 @@ func TestValidateDispatchConfigGitHub(t *testing.T) {
 				Codex: config.CodexConfig{
 					Command: "codex app-server",
 				},
+				Harness: config.HarnessConfig{
+					MaxIterations: 5,
+				},
 			},
 			expected: false, // repo 是必需的
 		},
@@ -691,6 +700,9 @@ func TestValidateDispatchConfigGitHub(t *testing.T) {
 				},
 				Codex: config.CodexConfig{
 					Command: "codex app-server",
+				},
+				Harness: config.HarnessConfig{
+					MaxIterations: 5,
 				},
 			},
 			expected: true, // 目前没有格式验证
@@ -780,11 +792,8 @@ func TestDefaultConfigFields(t *testing.T) {
 	cfg := config.DefaultConfig()
 
 	// 验证 Tracker 配置
-	if cfg.Tracker.Kind != "linear" {
-		t.Errorf("expected tracker kind 'linear', got %s", cfg.Tracker.Kind)
-	}
-	if cfg.Tracker.Endpoint != "https://api.linear.app/graphql" {
-		t.Errorf("expected endpoint 'https://api.linear.app/graphql', got %s", cfg.Tracker.Endpoint)
+	if cfg.Tracker.Kind != "mock" {
+		t.Errorf("expected tracker kind 'mock', got %s", cfg.Tracker.Kind)
 	}
 	if len(cfg.Tracker.ActiveStates) == 0 {
 		t.Error("expected non-empty active states")

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/dministrator/symphony/internal/common"
 	"github.com/dministrator/symphony/internal/domain"
 	"github.com/dministrator/symphony/internal/server/components"
 	"github.com/dministrator/symphony/internal/tracker"
@@ -15,6 +16,7 @@ import (
 // TaskHandler 任务创建处理器
 type TaskHandler struct {
 	tracker tracker.Tracker
+	engine  *components.TemplateEngine
 }
 
 // NewTaskHandler 创建新的任务处理器
@@ -25,6 +27,11 @@ func NewTaskHandler() *TaskHandler {
 // NewTaskHandlerWithTracker 创建带有 tracker 的任务处理器
 func NewTaskHandlerWithTracker(t tracker.Tracker) *TaskHandler {
 	return &TaskHandler{tracker: t}
+}
+
+// NewTaskHandlerWithTrackerAndEngine 创建带有 tracker 和模板引擎的任务处理器
+func NewTaskHandlerWithTrackerAndEngine(t tracker.Tracker, engine *components.TemplateEngine) *TaskHandler {
+	return &TaskHandler{tracker: t, engine: engine}
 }
 
 // HandleNewTaskForm 处理任务创建表单页面请求
@@ -41,6 +48,15 @@ func (h *TaskHandler) HandleTaskDetail(c *gin.Context) {
 
 	// 检查 tracker 是否可用
 	if h.tracker == nil {
+		if h.engine != nil {
+			data := &components.TemplateData{
+				Title:        "错误",
+				ErrorTitle:   "Tracker 不可用",
+				ErrorMessage: "无法获取任务信息",
+			}
+			h.engine.RenderHTML(c, "pages/error.html", data)
+			return
+		}
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"error": "tracker not available",
 		})
@@ -53,6 +69,15 @@ func (h *TaskHandler) HandleTaskDetail(c *gin.Context) {
 	issue, err := h.tracker.GetTask(ctx, identifier)
 	if err != nil {
 		// 任务不存在，显示错误页面
+		if h.engine != nil {
+			data := &components.TemplateData{
+				Title:        "错误",
+				ErrorTitle:   "任务不存在",
+				ErrorMessage: fmt.Sprintf("无法找到任务 %s", identifier),
+			}
+			h.engine.RenderHTML(c, "pages/error.html", data)
+			return
+		}
 		html := components.RenderErrorHTML("任务不存在", fmt.Sprintf("无法找到任务 %s", identifier))
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusNotFound, html)
@@ -78,7 +103,57 @@ func (h *TaskHandler) HandleTaskDetail(c *gin.Context) {
 		conversationHistory = []domain.ConversationTurn{}
 	}
 
-	// 渲染任务详情页面
+	// 使用模板引擎（如果可用）
+	if h.engine != nil {
+		// 计算辅助数据
+		elapsedDisplay := ""
+		if stageState.StartedAt != (time.Time{}) {
+			elapsedSeconds := int64(time.Since(stageState.StartedAt).Seconds())
+			elapsedDisplay = components.FormatDurationForDetail(elapsedSeconds)
+		}
+
+		currentRound := stageState.Round
+		roundProgress := fmt.Sprintf("%d / %d", currentRound, components.MaxClarificationRounds)
+
+		// 获取当前问题
+		currentQuestion := ""
+		for i := len(conversationHistory) - 1; i >= 0; i-- {
+			if conversationHistory[i].Role == "assistant" {
+				currentQuestion = conversationHistory[i].Content
+				break
+			}
+		}
+
+		data := &components.TemplateData{
+			Title:             fmt.Sprintf("任务详情: %s", issue.Identifier),
+			PageName:          "task-detail",
+			HeroCopy:          issue.Title,
+			NeedsHTMX:         true,
+			ShowBackButton:    true,
+			BackURL:           "/",
+			BackText:          "返回看板",
+			Issue:             issue,
+			StageState:        stageState,
+			Conversation:      conversationHistory,
+			ConversationHTML:  components.RenderConversationHistoryHTML(conversationHistory),
+			ElapsedDisplay:    elapsedDisplay,
+			StageDisplay:      components.GetStageDisplay(stageState.Name),
+			StatusDisplay:     components.GetStatusDisplay(stageState.Status),
+			StateClass:        common.StateBadgeClass(issue.State),
+			IsWaitingForAnswer: stageState.Name == "clarification" && stageState.Status == "in_progress",
+			IsImplementation:   stageState.Name == "implementation",
+			IsNeedsAttention:   stageState.Name == "needs_attention",
+			IsVerification:     stageState.Name == "verification",
+			CurrentQuestion:    currentQuestion,
+			RoundProgress:      roundProgress,
+			CurrentRound:       currentRound,
+		}
+
+		h.engine.RenderHTML(c, "pages/task-detail.html", data)
+		return
+	}
+
+	// 兜底：使用旧的字符串模板
 	html := components.RenderTaskDetailHTML(issue, stageState, conversationHistory)
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, html)

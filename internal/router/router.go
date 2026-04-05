@@ -3,8 +3,10 @@ package router
 import (
 	"github.com/dministrator/symphony/internal/common"
 	"github.com/dministrator/symphony/internal/orchestrator"
+	"github.com/dministrator/symphony/internal/server/components"
 	"github.com/dministrator/symphony/internal/server/handlers"
 	"github.com/dministrator/symphony/internal/server/static"
+	"github.com/dministrator/symphony/internal/server/templates"
 	"github.com/dministrator/symphony/internal/workflow"
 	"github.com/gin-gonic/gin"
 )
@@ -47,8 +49,14 @@ func SetupRouter(orchestrator *orchestrator.Orchestrator, broadcaster *common.SS
 	staticHandler := handlers.NewStaticHandler(static.DashboardFS)
 	engine.GET("/dashboard.css", staticHandler.HandleDashboardCSS)
 
-	// 主页 - 仪表板
-	dashboardHandler := handlers.NewDashboardHandler(orchestrator)
+	// 初始化模板引擎
+	tmplEngine, err := components.NewTemplateEngine(templates.TemplateFS)
+	if err != nil {
+		panic("Failed to initialize template engine: " + err.Error())
+	}
+
+	// 主页 - 仪表板（使用模板引擎）
+	dashboardHandler := handlers.NewDashboardHandlerWithEngine(orchestrator, tmplEngine)
 	engine.GET("/", dashboardHandler.Handle)
 
 	// 任务创建表单页面
@@ -132,8 +140,14 @@ func SetupRouterWithExecution(orchestrator *orchestrator.Orchestrator, broadcast
 	staticHandler := handlers.NewStaticHandler(static.DashboardFS)
 	engine.GET("/dashboard.css", staticHandler.HandleDashboardCSS)
 
-	// 主页 - 仪表板
-	dashboardHandler := handlers.NewDashboardHandler(orchestrator)
+	// 初始化模板引擎
+	tmplEngine, err := components.NewTemplateEngine(templates.TemplateFS)
+	if err != nil {
+		panic("Failed to initialize template engine: " + err.Error())
+	}
+
+	// 主页 - 仪表板（使用模板引擎）
+	dashboardHandler := handlers.NewDashboardHandlerWithEngine(orchestrator, tmplEngine)
 	engine.GET("/", dashboardHandler.Handle)
 
 	// 任务创建表单页面

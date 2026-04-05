@@ -126,17 +126,33 @@ type KanbanStageConfig struct {
 	Order   int    // 排序顺序
 }
 
-// KanbanStages 看板阶段定义
+// KanbanStages 看板阶段定义 (5列: 未开始、规划器、生成器、评估器、已完成)
 var KanbanStages = []KanbanStageConfig{
-	{ID: "backlog", Title: "待开始", Icon: "inbox", Color: "#6b7280", Order: 0},
-	{ID: "clarification", Title: "需求澄清", Icon: "help-circle", Color: "#8b5cf6", Order: 1},
-	{ID: "bdd_review", Title: "待审核 BDD", Icon: "file-check", Color: "#f59e0b", Order: 2},
-	{ID: "architecture_review", Title: "待审核架构", Icon: "layout", Color: "#ec4899", Order: 3},
-	{ID: "implementation", Title: "实现中", Icon: "code", Color: "#22d3ee", Order: 4},
-	{ID: "verification", Title: "待验收", Icon: "check-circle", Color: "#10b981", Order: 5},
-	{ID: "completed", Title: "完成", Icon: "check", Color: "#4ade80", Order: 6},
-	{ID: "needs_attention", Title: "待人工处理", Icon: "alert-triangle", Color: "#f87171", Order: 7},
-	{ID: "cancelled", Title: "已取消", Icon: "x-circle", Color: "#9ca3af", Order: 8},
+	{ID: "backlog", Title: "未开始", Icon: "inbox", Color: "#6b7280", Order: 0},
+	{ID: "planner", Title: "规划器", Icon: "clipboard", Color: "#ffd43b", Order: 1},
+	{ID: "generator", Title: "生成器", Icon: "code", Color: "#339af0", Order: 2},
+	{ID: "evaluator", Title: "评估器", Icon: "check-circle", Color: "#da77f2", Order: 3},
+	{ID: "done", Title: "已完成", Icon: "check", Color: "#51cf66", Order: 4},
+}
+
+// TaskStageToKanbanColumn 任务阶段到看板列的映射
+// 规划器阶段: clarification, bdd_review, architecture_review
+// 生成器阶段: implementation, testing
+// 评估器阶段: verification, review
+// 已完成: completed, cancelled, needs_attention
+func TaskStageToKanbanColumn(taskStage string) string {
+	switch taskStage {
+	case "clarification", "bdd_review", "architecture_review":
+		return "planner"
+	case "implementation", "testing":
+		return "generator"
+	case "verification", "review":
+		return "evaluator"
+	case "completed", "cancelled", "needs_attention":
+		return "done"
+	default:
+		return "backlog"
+	}
 }
 
 // GetKanbanStageConfig 根据阶段 ID 获取配置

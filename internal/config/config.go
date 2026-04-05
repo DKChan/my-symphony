@@ -25,18 +25,17 @@ type Config struct {
 	Clarification ClarificationConfig `json:"clarification"`
 	Execution     ExecutionConfig     `json:"execution"`
 	Logging       LoggingConfig       `json:"logging"`
+	Harness       HarnessConfig       `json:"harness"`
 }
 
 // TrackerConfig 跟踪器配置
 type TrackerConfig struct {
-	// Kind 跟踪器类型：linear、github 或 mock
+	// Kind 跟踪器类型：github、mock 或 beads
 	Kind string `json:"kind"`
 	// Endpoint API端点
 	Endpoint string `json:"endpoint"`
 	// APIKey API密钥
 	APIKey string `json:"api_key"`
-	// ProjectSlug 项目标识（Linear专用）
-	ProjectSlug string `json:"project_slug"`
 	// Repo 仓库（GitHub专用，格式：owner/repo）
 	Repo string `json:"repo,omitempty"`
 	// ActiveStates 活跃状态列表
@@ -68,6 +67,8 @@ type PollingConfig struct {
 type WorkspaceConfig struct {
 	// Root 工作空间根目录
 	Root string `json:"root"`
+	// ProjectName 项目名称
+	ProjectName string `json:"project_name,omitempty"`
 }
 
 // HooksConfig 钩子配置
@@ -170,12 +171,37 @@ type LoggingConfig struct {
 	EnableStdout bool `json:"enable_stdout"`
 }
 
+// HarnessConfig Harness 配置 (P-G-E 架构)
+type HarnessConfig struct {
+	// MaxIterations 最大迭代次数
+	MaxIterations int `json:"max_iterations"`
+	// BMAD BMAD Agent 配置
+	BMAD BMADConfig `json:"bmad"`
+}
+
+// BMADConfig BMAD Agent 配置
+type BMADConfig struct {
+	// Enabled 是否启用 BMAD Agent
+	Enabled bool `json:"enabled"`
+	// Agents 启用的 Agent 列表（按角色分组）
+	Agents BMADAgentsConfig `json:"agents,omitempty"`
+}
+
+// BMADAgentsConfig BMAD Agent 分组配置
+type BMADAgentsConfig struct {
+	// Planner 规划阶段 Agent 列表
+	Planner []string `json:"planner,omitempty"`
+	// Generator 生成阶段 Agent 列表
+	Generator []string `json:"generator,omitempty"`
+	// Evaluator 评估阶段 Agent 列表
+	Evaluator []string `json:"evaluator,omitempty"`
+}
+
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
 		Tracker: TrackerConfig{
-			Kind:           "linear",
-			Endpoint:       "https://api.linear.app/graphql",
+			Kind:           "mock",
 			ActiveStates:   []string{"Todo", "In Progress"},
 			TerminalStates: []string{"Closed", "Cancelled", "Canceled", "Duplicate", "Done"},
 		},
@@ -212,6 +238,17 @@ func DefaultConfig() *Config {
 			Format:       "json",
 			EnableStdout: true,
 		},
+		Harness: HarnessConfig{
+			MaxIterations: 5,
+			BMAD: BMADConfig{
+				Enabled: true,
+				Agents: BMADAgentsConfig{
+					Planner:   []string{"bmad-agent-pm", "bmad-agent-qa", "bmad-agent-architect"},
+					Generator: []string{"bmad-agent-qa", "bmad-agent-dev"},
+					Evaluator: []string{"bmad-code-review", "bmad-editorial-review-prose"},
+				},
+			},
+		},
 	}
 }
 
@@ -229,9 +266,6 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 		}
 		if apiKey, ok := tracker["api_key"].(string); ok {
 			cfg.Tracker.APIKey = resolveEnvVar(apiKey)
-		}
-		if projectSlug, ok := tracker["project_slug"].(string); ok {
-			cfg.Tracker.ProjectSlug = projectSlug
 		}
 		if repo, ok := tracker["repo"].(string); ok {
 			cfg.Tracker.Repo = repo
@@ -286,6 +320,9 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 		if root, ok := workspace["root"].(string); ok {
 			cfg.Workspace.Root = expandPath(resolveEnvVar(root))
 		}
+		if projectName, ok := workspace["project_name"].(string); ok {
+			cfg.Workspace.ProjectName = projectName
+		}
 	}
 
 	// 解析 hooks 配置
@@ -325,9 +362,9 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 			cfg.Agent.MaxRetryBackoffMs = maxRetryBackoff
 		}
 		if turnTimeout, ok := parseInt(agent["turn_timeout_ms"]); ok {
-				// 0 或负数表示无超时限制，允许设置任何值
-				cfg.Agent.TurnTimeoutMs = turnTimeout
-			}
+			// 0 或负数表示无超时限制，允许设置任何值
+			cfg.Agent.TurnTimeoutMs = turnTimeout
+		}
 		if byState, ok := agent["max_concurrent_agents_by_state"].(map[string]interface{}); ok {
 			for state, val := range byState {
 				if limit, ok := parseInt(val); ok && limit > 0 {
@@ -380,9 +417,9 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 			cfg.Codex.TurnSandboxPolicy = turnSandboxPolicy
 		}
 		if turnTimeout, ok := parseInt(codex["turn_timeout_ms"]); ok {
-				// 0 或负数表示无超时限制，允许设置任何值
-				cfg.Codex.TurnTimeoutMs = turnTimeout
-			}
+			// 0 或负数表示无超时限制，允许设置任何值
+			cfg.Codex.TurnTimeoutMs = turnTimeout
+		}
 		if readTimeout, ok := parseInt(codex["read_timeout_ms"]); ok && readTimeout > 0 {
 			cfg.Codex.ReadTimeoutMs = readTimeout
 		}
@@ -425,6 +462,30 @@ func ParseConfig(raw map[string]interface{}) (*Config, error) {
 		}
 		if enableStdout, ok := logging["enable_stdout"].(bool); ok {
 			cfg.Logging.EnableStdout = enableStdout
+		}
+	}
+
+	// 解析 harness 配置
+	if harness, ok := raw["harness"].(map[string]interface{}); ok {
+		if maxIterations, ok := parseInt(harness["max_iterations"]); ok && maxIterations > 0 {
+			cfg.Harness.MaxIterations = int(maxIterations)
+		}
+		if bmad, ok := harness["bmad"].(map[string]interface{}); ok {
+			if enabled, ok := bmad["enabled"].(bool); ok {
+				cfg.Harness.BMAD.Enabled = enabled
+			}
+			// 解析 agents 配置（支持分组结构）
+			if agents, ok := bmad["agents"].(map[string]interface{}); ok {
+				if planner := parseStringList(agents["planner"]); len(planner) > 0 {
+					cfg.Harness.BMAD.Agents.Planner = planner
+				}
+				if generator := parseStringList(agents["generator"]); len(generator) > 0 {
+					cfg.Harness.BMAD.Agents.Generator = generator
+				}
+				if evaluator := parseStringList(agents["evaluator"]); len(evaluator) > 0 {
+					cfg.Harness.BMAD.Agents.Evaluator = evaluator
+				}
+			}
 		}
 	}
 
@@ -503,11 +564,11 @@ func (c *Config) ValidateDispatchConfig() *Validation {
 	var errors []string
 
 	// 验证 tracker.kind
-	supportedTrackers := map[string]bool{"linear": true, "github": true, "mock": true, "beads": true}
+	supportedTrackers := map[string]bool{"github": true, "mock": true, "beads": true}
 	if c.Tracker.Kind == "" {
 		errors = append(errors, "tracker.kind is required")
 	} else if !supportedTrackers[c.Tracker.Kind] {
-		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: linear, github, mock, beads)", c.Tracker.Kind))
+		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: github, mock, beads)", c.Tracker.Kind))
 	}
 
 	// mock 和 beads 类型不需要 api_key，跳过验证
@@ -518,21 +579,14 @@ func (c *Config) ValidateDispatchConfig() *Validation {
 		}
 	}
 
-	// 验证 tracker.api_key
-	if c.Tracker.APIKey == "" {
+	// 验证 tracker.api_key（mock 和 beads 不需要）
+	if c.Tracker.Kind != "mock" && c.Tracker.Kind != "beads" && c.Tracker.APIKey == "" {
 		switch c.Tracker.Kind {
-		case "linear":
-			errors = append(errors, "tracker.api_key is required (set LINEAR_API_KEY env var or api_key in config)")
 		case "github":
 			errors = append(errors, "tracker.api_key is required (set GITHUB_TOKEN env var or api_key in config)")
 		default:
 			errors = append(errors, "tracker.api_key is required")
 		}
-	}
-
-	// 验证 tracker.project_slug（Linear必需）
-	if c.Tracker.Kind == "linear" && c.Tracker.ProjectSlug == "" {
-		errors = append(errors, "tracker.project_slug is required for linear tracker")
 	}
 
 	// 验证 tracker.repo（GitHub必需）
@@ -553,6 +607,11 @@ func (c *Config) ValidateDispatchConfig() *Validation {
 	// codex agent 需要 codex.command
 	if agentKind == "codex" && c.Codex.Command == "" {
 		errors = append(errors, "codex.command is required for codex agent")
+	}
+
+	// 验证 harness.max_iterations
+	if c.Harness.MaxIterations <= 0 {
+		errors = append(errors, "harness.max_iterations must be positive")
 	}
 
 	return &Validation{
@@ -596,29 +655,11 @@ func (c *Config) ValidateSymphonyConfig() *Validation {
 	var errors []string
 
 	// 验证 tracker 配置有效性
-	supportedTrackers := map[string]bool{"linear": true, "github": true, "mock": true, "beads": true}
+	supportedTrackers := map[string]bool{"github": true, "mock": true, "beads": true}
 	if c.Tracker.Kind == "" {
 		errors = append(errors, "tracker.kind is required")
 	} else if !supportedTrackers[c.Tracker.Kind] {
-		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: linear, github, mock, beads)", c.Tracker.Kind))
-	}
-
-	// 验证 tracker API 配置
-	// mock 和 beads 类型不需要 API 配置
-	if c.Tracker.Kind != "mock" && c.Tracker.Kind != "beads" {
-		if c.Tracker.APIKey == "" {
-			switch c.Tracker.Kind {
-			case "linear":
-				errors = append(errors, "tracker.api_key is required for linear tracker")
-			case "github":
-				errors = append(errors, "tracker.api_key is required for github tracker")
-			}
-		}
-	}
-
-	// 验证 Linear 特定配置
-	if c.Tracker.Kind == "linear" && c.Tracker.ProjectSlug == "" {
-		errors = append(errors, "tracker.project_slug is required for linear tracker")
+		errors = append(errors, fmt.Sprintf("unsupported tracker.kind: %s (supported: github, mock, beads)", c.Tracker.Kind))
 	}
 
 	// 验证 GitHub 特定配置
@@ -684,6 +725,11 @@ func (c *Config) ValidateSymphonyConfig() *Validation {
 	// 验证 execution.max_retries
 	if c.Execution.MaxRetries < 0 {
 		errors = append(errors, "execution.max_retries must be non-negative")
+	}
+
+	// 验证 harness.max_iterations
+	if c.Harness.MaxIterations <= 0 {
+		errors = append(errors, "harness.max_iterations must be positive")
 	}
 
 	return &Validation{

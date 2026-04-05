@@ -546,7 +546,10 @@ func TestRenderStageKanban(t *testing.T) {
 	}
 
 	html := components.RenderStageKanban(payload)
-	assert.Contains(t, html, "kanban")
+	assert.Contains(t, html, "column")
+	assert.Contains(t, html, "clarification")
+	assert.Contains(t, html, "column-header")
+	assert.Contains(t, html, "task-list")
 }
 
 // TestRenderStageKanbanScript 测试 RenderStageKanbanScript 函数

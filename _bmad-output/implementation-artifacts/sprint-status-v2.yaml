@@ -13,21 +13,16 @@
 #   - in-progress: Epic actively being worked on
 #   - done: All stories in epic completed
 #
-# Epic Status Transitions:
-#   - backlog → in-progress: Automatically when first story is created (via create-story)
-#   - in-progress → done: Manually when all stories reach 'done' status
-#
 # Story Status:
 #   - backlog: Story only exists in epic file
 #   - ready-for-dev: Story file created in stories folder
 #   - in-progress: Developer actively working on implementation
-#   - review: Ready for code review (via Dev's code-review workflow)
+#   - review: Ready for code review
 #   - done: Story completed
 #
-# Retrospective Status:
-#   - optional: Can be completed but not required
-#   - done: Retrospective has been completed
-#
+# Iteration Status:
+#   - Records iteration count for each task
+
 # WORKFLOW NOTES:
 # ===============
 # - P-G-E Architecture: Planner → Generator → Evaluator
@@ -35,9 +30,6 @@
 # - Generator Phase 1 parallel, Phase 2 sequential
 # - Evaluator only evaluates code, does not judge failure type
 # - Max iterations: 5 (configurable)
-# - Epic transitions to 'in-progress' automatically when first story is created
-# - Stories can be worked in parallel if team capacity allows
-# - SM typically creates next story after previous one is 'done' to incorporate learnings
 
 generated: 2026-04-05T00:00:00
 last_updated: 2026-04-05T00:00:00
@@ -48,16 +40,14 @@ story_location: _bmad-output/implementation-artifacts
 version: 2.0
 
 development_status:
-  # Epic 1: 项目初始化与配置 (FR1-8, NFR4-5)
-  epic-1: in-progress
-  1-1-cli-init-交互式初始化: done
-last_updated: 2026-04-05
+  # Epic 1: 项目初始化与配置
+  epic-1: backlog
+  1-1-cli-init-交互式初始化: backlog
   1-2-配置验证与管理: backlog
   1-3-beads-tracker-集成: backlog
   1-4-cli-start-启动后台服务: backlog
-  epic-1-retrospective: optional
 
-  # Epic 2: Planner 模块实现 (FR10-16, NFR1, NFR3)
+  # Epic 2: Planner 模块实现
   epic-2: backlog
   2-1-bmad-agent-调用框架: backlog
   2-2-需求澄清-人工参与: backlog
@@ -65,9 +55,8 @@ last_updated: 2026-04-05
   2-4-领域建模: backlog
   2-5-架构设计: backlog
   2-6-接口设计: backlog
-  epic-2-retrospective: optional
 
-  # Epic 3: Generator 模块实现 (FR20-26, NFR8)
+  # Epic 3: Generator 模块实现
   epic-3: backlog
   3-1-generator-调度器: backlog
   3-2-bdd-测试脚本生成: backlog
@@ -75,9 +64,8 @@ last_updated: 2026-04-05
   3-4-单元测试生成: backlog
   3-5-代码实现: backlog
   3-6-并行执行控制: backlog
-  epic-3-retrospective: optional
 
-  # Epic 4: Evaluator 模块实现 (FR30-35)
+  # Epic 4: Evaluator 模块实现
   epic-4: backlog
   4-1-evaluator-调度器: backlog
   4-2-bdd-验收执行: backlog
@@ -85,32 +73,28 @@ last_updated: 2026-04-05
   4-4-代码审计: backlog
   4-5-代码风格评审: backlog
   4-6-失败报告生成: backlog
-  epic-4-retrospective: optional
 
-  # Epic 5: 迭代回流机制 (FR40-44)
+  # Epic 5: 迭代回流机制
   epic-5: backlog
   5-1-迭代计数与管理: backlog
   5-2-迭代上限处理: backlog
   5-3-迭代子任务创建: backlog
   5-4-代码修复范围限制: backlog
   5-5-迭代进度展示: backlog
-  epic-5-retrospective: optional
 
-  # Epic 6: Beads 任务结构适配 (FR51-53, FR60-62, NFR4)
+  # Epic 6: Beads 任务结构适配
   epic-6: backlog
   6-1-三类子任务结构: backlog
   6-2-迭代任务创建与依赖: backlog
   6-3-任务状态流转适配: backlog
   6-4-任务状态持久化: backlog
-  epic-6-retrospective: optional
 
-  # Epic 7: Web UI 适配 (FR53-54, NFR9)
+  # Epic 7: Web UI 适配
   epic-7: backlog
   7-1-三类任务看板展示: backlog
   7-2-迭代进度展示: backlog
   7-3-失败报告展示: backlog
   7-4-实时状态更新: backlog
-  epic-7-retrospective: optional
 
 # Iteration tracking for active tasks
 iteration_status: {}

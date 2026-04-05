@@ -43,8 +43,8 @@ func TestParseNoFrontMatter(t *testing.T) {
 func TestParseWithFrontMatter(t *testing.T) {
 	content := []byte(`---
 tracker:
-  kind: linear
-  project_slug: TEST
+  kind: github
+  repo: owner/repo
 polling:
   interval_ms: 60000
 ---
@@ -68,12 +68,12 @@ Please work on this issue.
 		t.Fatal("expected tracker config")
 	}
 
-	if tracker["kind"] != "linear" {
-		t.Errorf("expected tracker kind 'linear', got %v", tracker["kind"])
+	if tracker["kind"] != "github" {
+		t.Errorf("expected tracker kind 'github', got %v", tracker["kind"])
 	}
 
-	if tracker["project_slug"] != "TEST" {
-		t.Errorf("expected project slug 'TEST', got %v", tracker["project_slug"])
+	if tracker["repo"] != "owner/repo" {
+		t.Errorf("expected repo 'owner/repo', got %v", tracker["repo"])
 	}
 
 	expectedPrompt := "# Task Prompt\n\nPlease work on this issue."
@@ -114,7 +114,7 @@ func TestParseFrontMatterNotMap(t *testing.T) {
 func TestParseMissingClosing(t *testing.T) {
 	content := []byte(`---
 tracker:
-  kind: linear
+  kind: github
 
 # Prompt
 `)

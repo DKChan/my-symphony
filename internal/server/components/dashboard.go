@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"html/template"
 	"strconv"
 	"strings"
 	"time"
@@ -776,35 +777,31 @@ func RenderRetryQueueKanban(state *domain.OrchestratorState) string {
 
 // RenderStageKanban 渲染按阶段分列的看板
 func RenderStageKanban(payload *common.KanbanPayload) string {
-	html := `<section class="stage-kanban-container" id="stage-kanban">`
+	var html string
 
 	for _, col := range payload.Columns {
 		html += renderStageColumn(col)
 	}
 
-	html += `</section>`
 	return html
 }
 
 // renderStageColumn 渲染单个阶段列
 func renderStageColumn(col common.KanbanColumn) string {
-	stageClass := "kanban-column-stage-" + col.ID
+	stageClass := "column-" + col.ID
 
-	html := `<div class="kanban-column ` + stageClass + `" data-stage="` + col.ID + `">
-            <div class="kanban-header" style="--stage-color: ` + col.Color + `;">
-                <div class="kanban-header-icon" style="background: rgba(0,0,0,0.2); color: ` + col.Color + `;">
-                    ` + col.Icon + `
-                </div>
-                <span class="kanban-header-title">` + col.Title + `</span>
-                <span class="kanban-header-count">` + strconv.Itoa(col.TaskCount) + `</span>
+	html := `<div class="column ` + stageClass + `" data-stage="` + col.ID + `">
+            <div class="column-header">
+                <span class="column-title">` + col.Icon + ` ` + col.Title + `</span>
+                <span class="task-count">` + strconv.Itoa(col.TaskCount) + `</span>
             </div>
-            <div class="kanban-cards" id="stage-cards-` + col.ID + `" data-stage="` + col.ID + `">`
+            <div class="task-list" id="stage-cards-` + col.ID + `" data-stage="` + col.ID + `">`
 
 	if col.TaskCount == 0 {
 		html += `<p class="empty-state">暂无任务</p>`
 	} else {
 		for _, task := range col.Tasks {
-			html += renderStageKanbanCard(task)
+			html += renderStageKanbanCard(task, col.Color)
 		}
 	}
 
@@ -813,114 +810,41 @@ func renderStageColumn(col common.KanbanColumn) string {
 }
 
 // renderStageKanbanCard 渲染看板任务卡片
-func renderStageKanbanCard(task common.KanbanTaskPayload) string {
-	stateClass := common.StateBadgeClass(task.State)
-	stageConfig := common.GetKanbanStageConfig(task.Stage)
-
-	// 计算token进度条
-	tokenPercent := 0
-	if task.Tokens.TotalTokens > 0 {
-		tokenPercent = int((float64(task.Tokens.OutputTokens) / float64(task.Tokens.TotalTokens)) * 100)
-		if tokenPercent > 100 {
-			tokenPercent = 100
-		}
-	}
-
+func renderStageKanbanCard(task common.KanbanTaskPayload, colColor string) string {
 	// 标题处理
 	title := task.Title
 	if title == "" {
 		title = task.IssueIdentifier
 	}
-	if len(title) > 50 {
-		title = title[:50] + "..."
+	if len(title) > 60 {
+		title = title[:60] + "..."
 	}
 
-	return `<div class="kanban-card" data-task-id="` + task.IssueIdentifier + `" data-stage="` + task.Stage + `" style="--card-accent: ` + stageConfig.Color + `;">
-                <div class="card-header">
-                    <span class="issue-id">` + common.EscapeHTML(task.IssueIdentifier) + `</span>
-                    <span class="` + stateClass + `">` + common.EscapeHTML(task.State) + `</span>
-                </div>
-                <div class="card-title">` + common.EscapeHTML(title) + `</div>
-                <div class="card-body">` +
-		func() string {
-			if task.SessionID != "" || task.RuntimeTurns != "" {
-				return `<div class="card-row">
-                        <span class="card-label">Session</span>
-                        <span>` + func() string {
-					if task.SessionID != "" {
-						return `<button type="button" class="subtle-button" data-label="复制" data-copy="` + task.SessionID + `" onclick="navigator.clipboard.writeText(this.dataset.copy); this.textContent = '已复制'; clearTimeout(this._copyTimer); this._copyTimer = setTimeout(() => { this.textContent = this.dataset.label }, 1200);">复制</button>`
-					}
-					return `<span class="muted">n/a</span>`
-				}() + `</span>
-                    </div>`
-			}
-			return ""
-		}() +
-		func() string {
-			if task.RuntimeTurns != "" {
-				return `<div class="card-row">
-                        <span class="card-label">Runtime</span>
-                        <span class="card-value mono">` + common.EscapeHTML(task.RuntimeTurns) + `</span>
-                    </div>`
-			}
-			return ""
-		}() +
-		func() string {
-			if task.LastEvent != "" {
-				return `<div class="card-divider"></div>
-                    <div class="card-row">
-                        <span class="card-label">Last Event</span>
-                        <span class="card-value" title="` + common.EscapeHTML(task.LastEvent) + `">` + common.EscapeHTML(task.LastEvent) + `</span>
-                    </div>`
-			}
-			return ""
-		}() +
-		func() string {
-			if task.Attempt > 0 {
-				return `<div class="card-divider"></div>
-                    <div class="card-row">
-                        <span class="card-label">Attempt</span>
-                        <span class="card-value">第 ` + strconv.Itoa(task.Attempt) + ` 次</span>
-                    </div>`
-			}
-			return ""
-		}() +
-		func() string {
-			if task.Error != "" {
-				errDisplay := task.Error
-				if len(errDisplay) > 50 {
-					errDisplay = errDisplay[:50] + "..."
-				}
-				return `<div class="card-row">
-                        <span class="card-label">Error</span>
-                        <span class="card-value card-value-error" title="` + common.EscapeHTML(task.Error) + `">` + common.EscapeHTML(errDisplay) + `</span>
-                    </div>`
-			}
-			return ""
-		}() +
-		func() string {
-			if task.Tokens.TotalTokens > 0 {
-				return `<div class="card-divider"></div>
-                    <div class="card-row">
-                        <span class="card-label">Tokens</span>
-                        <span class="card-value mono">` + common.FormatInt(task.Tokens.TotalTokens) + `</span>
-                    </div>
-                    <div class="token-bar">
-                        <div class="token-bar-fill" style="width: ` + strconv.Itoa(tokenPercent) + `%;"></div>
-                        <div class="token-bar-bg"></div>
-                    </div>
-                    <div class="card-row">
-                        <span class="card-label">In / Out</span>
-                        <span class="card-value mono muted">` + common.FormatInt(task.Tokens.InputTokens) + ` / ` + common.FormatInt(task.Tokens.OutputTokens) + `</span>
-                    </div>`
-			}
-			return ""
-		}() + `
-                    <div class="card-row" style="margin-top: 0.5rem;">
-                        <a class="issue-link" href="/api/v1/` + task.IssueIdentifier + `">查看详情 →</a>
-                    </div>
-                </div>
-            </div>`
+	// 优先级映射 (基于 state)
+	priorityClass := "priority-medium"
+	priorityLabel := "中优"
+	if task.State == "needs_attention" {
+		priorityClass = "priority-high"
+		priorityLabel = "高优"
+	} else if task.State == "completed" || task.State == "cancelled" {
+		priorityClass = "priority-low"
+		priorityLabel = "低优"
+	}
+
+	// 时间显示
+	timeDisplay := "刚刚"
+	if task.LastEventAt != "" {
+		timeDisplay = task.LastEventAt
+	}
+
+	return `<div class="task-card" data-task-id="` + task.IssueIdentifier + `" data-stage="` + task.Stage + `">
+            <div class="task-id">` + common.EscapeHTML(task.IssueIdentifier) + `</div>
+            <div class="task-title">` + common.EscapeHTML(title) + `</div>
+            <div class="task-meta">
+                <span class="task-priority ` + priorityClass + `">` + priorityLabel + `</span>
+                <span>` + common.EscapeHTML(timeDisplay) + `</span>
+            </div>
+        </div>`
 }
 
 // RenderStageKanbanScript 渲染看板 SSE 脚本
@@ -3785,4 +3709,41 @@ func RenderNeedsAttentionHTML(issue *domain.Issue, stageState *domain.StageState
     </script>
 </body>
 </html>`
+}
+
+// === 导出的辅助函数供模板引擎使用 ===
+
+// GetStageDisplay 导出的阶段显示函数
+func GetStageDisplay(stageName string) string {
+	return getStageDisplay(stageName)
+}
+
+// GetStatusDisplay 导出的状态显示函数
+func GetStatusDisplay(status string) string {
+	return getStatusDisplay(status)
+}
+
+// FormatDurationForDetail 导出的时长格式化函数
+func FormatDurationForDetail(seconds int64) string {
+	return formatDurationForDetail(seconds)
+}
+
+// RenderConversationHistoryHTML 导出的对话历史渲染函数
+func RenderConversationHistoryHTML(history []domain.ConversationTurn) template.HTML {
+	return template.HTML(renderConversationHistory(history))
+}
+
+// FormatBDDContentHTML 导出的 BDD 内容格式化函数
+func FormatBDDContentHTML(content string) template.HTML {
+	return template.HTML(formatBDDContent(content))
+}
+
+// FormatArchitectureContentHTML 导出的架构内容格式化函数
+func FormatArchitectureContentHTML(content string) template.HTML {
+	return template.HTML(formatArchitectureContent(content))
+}
+
+// FormatTDDContentHTML 导出的 TDD 内容格式化函数
+func FormatTDDContentHTML(content string) template.HTML {
+	return template.HTML(formatTDDContent(content))
 }

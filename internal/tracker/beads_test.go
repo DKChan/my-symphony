@@ -448,7 +448,6 @@ func TestTrackerInterfaceCompliance(t *testing.T) {
 	// 编译时检查接口实现
 	var _ Tracker = (*BeadsClient)(nil)
 	var _ Tracker = (*MockClient)(nil)
-	var _ Tracker = (*LinearClient)(nil)
 	var _ Tracker = (*GitHubClient)(nil)
 }
 

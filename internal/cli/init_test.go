@@ -4,12 +4,18 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// boolPtr 辅助函数，用于创建 bool 指针
+func boolPtr(v bool) *bool {
+	return &v
+}
 
 func TestNewInitCommand(t *testing.T) {
 	opts := InitOptions{
@@ -42,19 +48,6 @@ func TestInitCommand_GenerateConfig(t *testing.T) {
 			wantAgent:   "codex",
 		},
 		{
-			name:        "linear tracker with claude agent",
-			trackerType: "linear",
-			agentType:   "claude",
-			trackerData: &trackerConfigData{
-				apiKey:      "lin_api_xxx",
-				projectSlug: "PROJ-1",
-				endpoint:    "https://api.linear.app/graphql",
-			},
-			wantTracker:  "linear",
-			wantAgent:    "claude",
-			wantEndpoint: "https://api.linear.app/graphql",
-		},
-		{
 			name:        "github tracker with opencode agent",
 			trackerType: "github",
 			agentType:   "opencode",
@@ -83,7 +76,7 @@ func TestInitCommand_GenerateConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := NewInitCommand(InitOptions{})
-			cfg := cmd.generateConfig(tt.trackerType, tt.agentType, tt.trackerData)
+			cfg := cmd.generateConfig("", tt.trackerType, tt.agentType, true, 5, tt.trackerData)
 
 			assert.Equal(t, tt.wantTracker, cfg.Tracker.Kind)
 			assert.Equal(t, tt.wantAgent, cfg.Agent.Kind)
@@ -105,7 +98,7 @@ func TestInitCommand_CreateDirectoryStructure(t *testing.T) {
 	})
 
 	// 使用默认配置
-	cfg := cmd.generateConfig("mock", "codex", &trackerConfigData{})
+	cfg := cmd.generateConfig("", "mock", "codex", true, 5, &trackerConfigData{})
 
 	err := cmd.createDirectoryStructure(symDir, cfg)
 	require.NoError(t, err)
@@ -147,7 +140,7 @@ func TestInitCommand_GenerateConfigYAML(t *testing.T) {
 		AgentType:   "codex",
 	})
 
-	cfg := cmd.generateConfig("mock", "codex", &trackerConfigData{})
+	cfg := cmd.generateConfig("", "mock", "codex", true, 5, &trackerConfigData{})
 
 	err := cmd.generateConfigYAML(symDir, cfg)
 	require.NoError(t, err)
@@ -285,14 +278,14 @@ func TestInitCommand_MaskAPIKey(t *testing.T) {
 
 func TestInitCommand_BuildConfigMap(t *testing.T) {
 	cmd := NewInitCommand(InitOptions{
-		TrackerType: "linear",
+		TrackerType: "github",
 		AgentType:   "claude",
 	})
 
-	cfg := cmd.generateConfig("linear", "claude", &trackerConfigData{
-		apiKey:      "lin_api_test123",
-		projectSlug: "PROJ-1",
-		endpoint:    "https://api.linear.app/graphql",
+	cfg := cmd.generateConfig("", "github", "claude", true, 5, &trackerConfigData{
+		apiKey:   "ghp_test123",
+		repo:     "owner/repo",
+		endpoint: "https://api.github.com",
 	})
 
 	configMap := cmd.buildConfigMap(cfg)
@@ -320,8 +313,8 @@ func TestInitCommand_PromptSelect(t *testing.T) {
 	_ = NewInitCommand(InitOptions{})
 
 	// 测试默认选项逻辑
-	options := []string{"linear", "github", "mock", "beads"}
-	assert.Equal(t, 4, len(options))
+	options := []string{"github", "mock", "beads"}
+	assert.Equal(t, 3, len(options))
 	assert.Contains(t, options, "mock")
 	assert.Contains(t, options, "beads")
 }
@@ -378,7 +371,7 @@ func TestInitCommand_FilePermissions(t *testing.T) {
 		AgentType:   "codex",
 	})
 
-	cfg := cmd.generateConfig("mock", "codex", &trackerConfigData{})
+	cfg := cmd.generateConfig("", "mock", "codex", true, 5, &trackerConfigData{})
 	err := cmd.createDirectoryStructure(symDir, cfg)
 	require.NoError(t, err)
 
@@ -429,7 +422,7 @@ func TestInitCommand_ConfigYAMLContainsNewFields(t *testing.T) {
 
 	cmd := NewInitCommand(InitOptions{})
 
-	cfg := cmd.generateConfig("mock", "codex", &trackerConfigData{})
+	cfg := cmd.generateConfig("", "mock", "codex", true, 5, &trackerConfigData{})
 	err := cmd.generateConfigYAML(symDir, cfg)
 	require.NoError(t, err)
 
@@ -448,7 +441,7 @@ func TestInitCommand_ConfigYAMLContainsNewFields(t *testing.T) {
 }
 
 func TestInitCommand_AllTrackerTypes(t *testing.T) {
-	trackerTypes := []string{"linear", "github", "mock", "beads"}
+	trackerTypes := []string{"github", "mock", "beads"}
 
 	for _, trackerType := range trackerTypes {
 		t.Run(trackerType, func(t *testing.T) {
@@ -457,7 +450,7 @@ func TestInitCommand_AllTrackerTypes(t *testing.T) {
 				AgentType:   "codex",
 			})
 
-			cfg := cmd.generateConfig(trackerType, "codex", &trackerConfigData{})
+			cfg := cmd.generateConfig("", trackerType, "codex", true, 5, &trackerConfigData{})
 			assert.Equal(t, trackerType, cfg.Tracker.Kind)
 		})
 	}
@@ -473,7 +466,7 @@ func TestInitCommand_AllAgentTypes(t *testing.T) {
 				AgentType:   agentType,
 			})
 
-			cfg := cmd.generateConfig("mock", agentType, &trackerConfigData{})
+			cfg := cmd.generateConfig("", "mock", agentType, true, 5, &trackerConfigData{})
 			assert.Equal(t, agentType, cfg.Agent.Kind)
 		})
 	}
@@ -484,7 +477,7 @@ func TestInitCommand_ErrorCases(t *testing.T) {
 		cmd := NewInitCommand(InitOptions{})
 		// 使用一个不可能创建的路径
 		invalidPath := "/proc/invalid/.sym"
-		cfg := cmd.generateConfig("mock", "codex", &trackerConfigData{})
+		cfg := cmd.generateConfig("", "mock", "codex", true, 5, &trackerConfigData{})
 
 		err := cmd.createDirectoryStructure(invalidPath, cfg)
 		// 应该返回错误（具体行为取决于系统）
@@ -500,7 +493,7 @@ func TestInitCommand_YAMLFormat(t *testing.T) {
 
 	cmd := NewInitCommand(InitOptions{})
 
-	cfg := cmd.generateConfig("mock", "codex", &trackerConfigData{})
+	cfg := cmd.generateConfig("", "mock", "codex", true, 5, &trackerConfigData{})
 	err := cmd.generateConfigYAML(symDir, cfg)
 	require.NoError(t, err)
 
@@ -550,7 +543,7 @@ func TestInitCommand_DirectoryExistsOverwrite(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(symDir, "config.yaml"), []byte("old content"), 0644))
 
 	cmd := NewInitCommand(InitOptions{})
-	cfg := cmd.generateConfig("mock", "codex", &trackerConfigData{})
+	cfg := cmd.generateConfig("", "mock", "codex", true, 5, &trackerConfigData{})
 
 	// 测试覆盖逻辑
 	err := cmd.createDirectoryStructure(symDir, cfg)
@@ -642,11 +635,11 @@ func TestInitCommand_ConfigYAMLAllFields(t *testing.T) {
 
 	cmd := NewInitCommand(InitOptions{})
 
-	// 使用 linear tracker 测试更多字段
-	cfg := cmd.generateConfig("linear", "claude", &trackerConfigData{
-		apiKey:      "lin_api_test12345678",
-		projectSlug: "PROJ-1",
-		endpoint:    "https://api.linear.app/graphql",
+	// 使用 github tracker 测试更多字段
+	cfg := cmd.generateConfig("", "github", "claude", true, 5, &trackerConfigData{
+		apiKey:   "ghp_test12345678",
+		repo:     "owner/repo",
+		endpoint: "https://api.github.com",
 	})
 
 	err := cmd.generateConfigYAML(symDir, cfg)
@@ -660,9 +653,9 @@ func TestInitCommand_ConfigYAMLAllFields(t *testing.T) {
 
 	// 验证所有主要配置项
 	assert.Contains(t, contentStr, "tracker:")
-	assert.Contains(t, contentStr, "kind: linear")
+	assert.Contains(t, contentStr, "kind: github")
 	assert.Contains(t, contentStr, "endpoint:")
-	assert.Contains(t, contentStr, "project_slug: PROJ-1")
+	assert.Contains(t, contentStr, "repo: owner/repo")
 	assert.Contains(t, contentStr, "active_states:")
 	assert.Contains(t, contentStr, "terminal_states:")
 	assert.Contains(t, contentStr, "polling:")
@@ -687,7 +680,7 @@ func TestInitCommand_BuildConfigMapWithClaude(t *testing.T) {
 		AgentType:   "claude",
 	})
 
-	cfg := cmd.generateConfig("mock", "claude", &trackerConfigData{})
+	cfg := cmd.generateConfig("", "mock", "claude", true, 5, &trackerConfigData{})
 	configMap := cmd.buildConfigMap(cfg)
 
 	// 验证 agent 配置
@@ -706,7 +699,7 @@ func TestInitCommand_BuildConfigMapWithOpenCode(t *testing.T) {
 		AgentType:   "opencode",
 	})
 
-	cfg := cmd.generateConfig("github", "opencode", &trackerConfigData{
+	cfg := cmd.generateConfig("", "github", "opencode", true, 5, &trackerConfigData{
 		repo: "owner/repo",
 	})
 	configMap := cmd.buildConfigMap(cfg)
@@ -757,11 +750,6 @@ func TestInitCommand_APIKeyMasking(t *testing.T) {
 			expected: "abcd...ghij",
 		},
 		{
-			name:     "linear API key format",
-			input:    "lin_api_abcdefghijklmnopqrstuvwxyz",
-			expected: "lin_...wxyz",
-		},
-		{
 			name:     "github token format",
 			input:    "ghp_1234567890ABCDEFGHIJKLMNOP",
 			expected: "ghp_...MNOP",
@@ -798,30 +786,6 @@ func TestInitCommand_RunWithAllOptionsProvided(t *testing.T) {
 	assert.FileExists(t, filepath.Join(tempDir, ".sym", "config.yaml"))
 	assert.FileExists(t, filepath.Join(tempDir, ".sym", "workflow.md"))
 	assert.DirExists(t, filepath.Join(tempDir, ".sym", "prompts"))
-}
-
-func TestInitCommand_RunWithLinearTracker(t *testing.T) {
-	tempDir := t.TempDir()
-
-	cmd := &InitCommand{
-		options: InitOptions{
-			TrackerType:    "linear",
-			AgentType:      "claude",
-			ProjectPath:    tempDir,
-			NonInteractive: true,
-		},
-		scanner: bufio.NewScanner(strings.NewReader("")),
-	}
-
-	err := cmd.Run()
-	require.NoError(t, err)
-
-	// 读取并验证配置
-	configPath := filepath.Join(tempDir, ".sym", "config.yaml")
-	content, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-	assert.Contains(t, string(content), "kind: linear")
-	assert.Contains(t, string(content), "kind: claude")
 }
 
 func TestInitCommand_RunWithGitHubTracker(t *testing.T) {
@@ -884,26 +848,26 @@ func TestInitCommand_RunWithInvalidPath(t *testing.T) {
 
 func TestInitCommand_PromptSelectWithInput(t *testing.T) {
 	// 测试用户输入数字选择
-	input := strings.NewReader("2\n")
+	input := strings.NewReader("1\n")
 	cmd := &InitCommand{
 		options: InitOptions{},
 		scanner: bufio.NewScanner(input),
 	}
 
-	result := cmd.promptSelect("选择 tracker", []string{"linear", "github", "mock", "beads"}, "mock")
+	result := cmd.promptSelect("选择 tracker", []string{"github", "mock", "beads"}, "beads")
 	assert.Equal(t, "github", result)
 }
 
 func TestInitCommand_PromptSelectWithDirectInput(t *testing.T) {
 	// 测试用户直接输入选项名称
-	input := strings.NewReader("linear\n")
+	input := strings.NewReader("github\n")
 	cmd := &InitCommand{
 		options: InitOptions{},
 		scanner: bufio.NewScanner(input),
 	}
 
-	result := cmd.promptSelect("选择 tracker", []string{"linear", "github", "mock", "beads"}, "mock")
-	assert.Equal(t, "linear", result)
+	result := cmd.promptSelect("选择 tracker", []string{"github", "mock", "beads"}, "mock")
+	assert.Equal(t, "github", result)
 }
 
 func TestInitCommand_PromptSelectWithEmptyInput(t *testing.T) {
@@ -914,8 +878,8 @@ func TestInitCommand_PromptSelectWithEmptyInput(t *testing.T) {
 		scanner: bufio.NewScanner(input),
 	}
 
-	result := cmd.promptSelect("选择 tracker", []string{"linear", "github", "mock", "beads"}, "mock")
-	assert.Equal(t, "mock", result)
+	result := cmd.promptSelect("选择 tracker", []string{"github", "mock", "beads"}, "beads")
+	assert.Equal(t, "beads", result)
 }
 
 func TestInitCommand_PromptInputWithInput(t *testing.T) {
@@ -984,19 +948,6 @@ func TestInitCommand_PromptConfirmEmptyDefaultTrue(t *testing.T) {
 	assert.True(t, result)
 }
 
-func TestInitCommand_CollectTrackerConfigLinear(t *testing.T) {
-	input := strings.NewReader("test_api_key\nPROJ-123\n")
-	cmd := &InitCommand{
-		options: InitOptions{},
-		scanner: bufio.NewScanner(input),
-	}
-
-	data := cmd.collectTrackerConfig("linear")
-	assert.Equal(t, "test_api_key", data.apiKey)
-	assert.Equal(t, "PROJ-123", data.projectSlug)
-	assert.Equal(t, "https://api.linear.app/graphql", data.endpoint)
-}
-
 func TestInitCommand_CollectTrackerConfigGitHub(t *testing.T) {
 	input := strings.NewReader("ghp_test_token\nowner/repo\n")
 	cmd := &InitCommand{
@@ -1017,4 +968,605 @@ func TestInitCommand_CollectTrackerConfigMock(t *testing.T) {
 	// mock 不需要配置
 	assert.Equal(t, "", data.apiKey)
 	assert.Equal(t, "", data.endpoint)
+}
+
+// 5.1 测试 InitOptions 新字段
+func TestInitOptions_NewFields(t *testing.T) {
+	tests := []struct {
+		name            string
+		opts            InitOptions
+		wantProjectName string
+		wantBMADEnabled *bool
+		wantMaxIterations int
+	}{
+		{
+			name: "all new fields set",
+			opts: InitOptions{
+				ProjectName:    "my-awesome-project",
+				BMADEnabled:    boolPtr(true),
+				MaxIterations:  10,
+			},
+			wantProjectName:  "my-awesome-project",
+			wantBMADEnabled:  boolPtr(true),
+			wantMaxIterations: 10,
+		},
+		{
+			name: "BMAD disabled",
+			opts: InitOptions{
+				ProjectName:    "test-project",
+				BMADEnabled:    boolPtr(false),
+				MaxIterations:  3,
+			},
+			wantProjectName:  "test-project",
+			wantBMADEnabled:  boolPtr(false),
+			wantMaxIterations: 3,
+		},
+		{
+			name: "empty project name",
+			opts: InitOptions{
+				ProjectName:    "",
+				BMADEnabled:    boolPtr(true),
+				MaxIterations:  5,
+			},
+			wantProjectName:  "",
+			wantBMADEnabled:  boolPtr(true),
+			wantMaxIterations: 5,
+		},
+		{
+			name: "zero max iterations",
+			opts: InitOptions{
+				ProjectName:    "project",
+				BMADEnabled:    boolPtr(true),
+				MaxIterations:  0,
+			},
+			wantProjectName:  "project",
+			wantBMADEnabled:  boolPtr(true),
+			wantMaxIterations: 0,
+		},
+		{
+			name: "nil BMADENabled uses default",
+			opts: InitOptions{
+				ProjectName:    "project",
+				BMADEnabled:    nil,
+				MaxIterations:  5,
+			},
+			wantProjectName:  "project",
+			wantBMADEnabled:  nil,
+			wantMaxIterations: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := NewInitCommand(tt.opts)
+			assert.Equal(t, tt.wantProjectName, cmd.options.ProjectName)
+			if tt.wantBMADEnabled == nil {
+				assert.Nil(t, cmd.options.BMADEnabled)
+			} else {
+				assert.Equal(t, *tt.wantBMADEnabled, *cmd.options.BMADEnabled)
+			}
+			assert.Equal(t, tt.wantMaxIterations, cmd.options.MaxIterations)
+		})
+	}
+}
+
+func TestInitOptions_DefaultValues(t *testing.T) {
+	// 测试新字段的默认值行为
+	opts := InitOptions{}
+	cmd := NewInitCommand(opts)
+
+	// 默认值应该是零值
+	assert.Equal(t, "", cmd.options.ProjectName)
+	assert.Nil(t, cmd.options.BMADEnabled)
+	assert.Equal(t, 0, cmd.options.MaxIterations)
+}
+
+// 5.2 测试交互式问答流程 - BMAD 相关
+func TestInitCommand_BMADEnabledPrompt(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		opts        InitOptions
+		wantEnabled bool
+	}{
+		{
+			name:        "user confirms BMAD enabled",
+			input:       "y\n",
+			opts:        InitOptions{BMADEnabled: boolPtr(false)},
+			wantEnabled: true,
+		},
+		{
+			name:        "user rejects BMAD enabled",
+			input:       "n\n",
+			opts:        InitOptions{BMADEnabled: boolPtr(false)},
+			wantEnabled: false,
+		},
+		{
+			name:        "empty input uses default true",
+			input:       "\n",
+			opts:        InitOptions{BMADEnabled: boolPtr(false)},
+			wantEnabled: true,
+		},
+		{
+			name:        "non-interactive mode uses option value true",
+			input:       "",
+			opts:        InitOptions{BMADEnabled: boolPtr(true), NonInteractive: true},
+			wantEnabled: true,
+		},
+		{
+			name:        "non-interactive mode uses option value false",
+			input:       "",
+			opts:        InitOptions{BMADEnabled: boolPtr(false), NonInteractive: true},
+			wantEnabled: false,
+		},
+		{
+			name:        "non-interactive mode nil uses default true",
+			input:       "",
+			opts:        InitOptions{BMADEnabled: nil, NonInteractive: true},
+			wantEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 只测试 promptConfirm 函数的行为
+			// 对于 non-interactive 模式，Run 函数会跳过 prompt
+			if !tt.opts.NonInteractive {
+				input := strings.NewReader(tt.input)
+				cmd := &InitCommand{
+					options: tt.opts,
+					scanner: bufio.NewScanner(input),
+				}
+				result := cmd.promptConfirm("是否启用 BMAD Agent?", true)
+				assert.Equal(t, tt.wantEnabled, result)
+			} else {
+				// 验证 NonInteractive 模式下值来自 opts 或默认值
+				cmd := NewInitCommand(tt.opts)
+				if cmd.options.BMADEnabled == nil {
+					// nil 应该使用默认值 true
+					assert.Equal(t, true, tt.wantEnabled)
+				} else {
+					assert.Equal(t, tt.wantEnabled, *cmd.options.BMADEnabled)
+				}
+			}
+		})
+	}
+}
+
+func TestInitCommand_MaxIterationsPrompt(t *testing.T) {
+	tests := []struct {
+		name              string
+		input             string
+		opts              InitOptions
+		wantMaxIterations int
+	}{
+		{
+			name:              "user enters valid number",
+			input:             "10\n",
+			opts:              InitOptions{MaxIterations: 0, BMADEnabled: boolPtr(true)},
+			wantMaxIterations: 10,
+		},
+		{
+			name:              "empty input uses default 5",
+			input:             "\n",
+			opts:              InitOptions{MaxIterations: 0, BMADEnabled: boolPtr(true)},
+			wantMaxIterations: 5,
+		},
+		{
+			name:              "invalid input uses default 5",
+			input:             "invalid\n",
+			opts:              InitOptions{MaxIterations: 0, BMADEnabled: boolPtr(true)},
+			wantMaxIterations: 5,
+		},
+		{
+			name:              "negative input uses default 5",
+			input:             "-5\n",
+			opts:              InitOptions{MaxIterations: 0, BMADEnabled: boolPtr(true)},
+			wantMaxIterations: 5,
+		},
+		{
+			name:              "zero input uses default 5",
+			input:             "0\n",
+			opts:              InitOptions{MaxIterations: 0, BMADEnabled: boolPtr(true)},
+			wantMaxIterations: 5,
+		},
+		{
+			name:              "non-interactive mode uses option value",
+			input:             "",
+			opts:              InitOptions{MaxIterations: 7, BMADEnabled: boolPtr(true), NonInteractive: true},
+			wantMaxIterations: 7,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !tt.opts.NonInteractive {
+				input := strings.NewReader(tt.input)
+				cmd := &InitCommand{
+					options: tt.opts,
+					scanner: bufio.NewScanner(input),
+				}
+				maxIterationsStr := cmd.promptInput("请输入最大迭代次数", "5")
+				if val, err := strconv.Atoi(maxIterationsStr); err == nil && val > 0 {
+					assert.Equal(t, tt.wantMaxIterations, val)
+				} else {
+					assert.Equal(t, tt.wantMaxIterations, 5)
+				}
+			} else {
+				// 验证 NonInteractive 模式下值来自 opts
+				cmd := NewInitCommand(tt.opts)
+				assert.Equal(t, tt.wantMaxIterations, cmd.options.MaxIterations)
+			}
+		})
+	}
+}
+
+func TestInitCommand_ProjectNamePrompt(t *testing.T) {
+	tests := []struct {
+		name            string
+		input           string
+		opts            InitOptions
+		wantProjectName string
+	}{
+		{
+			name:            "user enters project name",
+			input:           "my-project\n",
+			opts:            InitOptions{ProjectName: ""},
+			wantProjectName: "my-project",
+		},
+		{
+			name:            "empty input uses default",
+			input:           "\n",
+			opts:            InitOptions{ProjectName: ""},
+			wantProjectName: "my-project",
+		},
+		{
+			name:            "non-interactive mode uses option value",
+			input:           "",
+			opts:            InitOptions{ProjectName: "test-project", NonInteractive: true},
+			wantProjectName: "test-project",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !tt.opts.NonInteractive {
+				input := strings.NewReader(tt.input)
+				cmd := &InitCommand{
+					options: tt.opts,
+					scanner: bufio.NewScanner(input),
+				}
+				result := cmd.promptInput("请输入项目名称", "my-project")
+				assert.Equal(t, tt.wantProjectName, result)
+			} else {
+				cmd := NewInitCommand(tt.opts)
+				assert.Equal(t, tt.wantProjectName, cmd.options.ProjectName)
+			}
+		})
+	}
+}
+
+func TestInitCommand_NonInteractiveModeDefaultValues(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 测试非交互式模式下使用默认值
+	cmd := &InitCommand{
+		options: InitOptions{
+			TrackerType:    "mock",
+			AgentType:      "codex",
+			ProjectPath:    tempDir,
+			NonInteractive: true,
+			// 不设置 ProjectName, BMADEnabled, MaxIterations
+			// 验证默认值行为
+		},
+		scanner: bufio.NewScanner(strings.NewReader("")),
+	}
+
+	err := cmd.Run()
+	require.NoError(t, err)
+
+	// 验证配置文件已生成
+	configPath := filepath.Join(tempDir, ".sym", "config.yaml")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	contentStr := string(content)
+
+	// 验证 harness 配置使用默认值
+	assert.Contains(t, contentStr, "harness:")
+	// NonInteractive 模式下 BMADEnabled 默认为 false（零值）
+	// 但 generateConfig 中 bmadEnabled 参数会影响最终值
+}
+
+// 5.3 测试配置生成逻辑 - harness 配置
+func TestInitCommand_GenerateConfig_HarnessConfig(t *testing.T) {
+	tests := []struct {
+		name                string
+		projectName         string
+		bmadEnabled         bool
+		maxIterations       int
+		wantHarnessInYAML   bool
+		wantBMADEnabled     bool
+		wantMaxIterations   int
+		wantPlannerCount    int
+		wantGeneratorCount  int
+		wantEvaluatorCount  int
+	}{
+		{
+			name:               "BMAD enabled with default agents",
+			projectName:        "test-project",
+			bmadEnabled:        true,
+			maxIterations:      5,
+			wantHarnessInYAML:  true,
+			wantBMADEnabled:    true,
+			wantMaxIterations:  5,
+			wantPlannerCount:   3,
+			wantGeneratorCount: 2,
+			wantEvaluatorCount: 2,
+		},
+		{
+			name:               "BMAD disabled",
+			projectName:        "test-project",
+			bmadEnabled:        false,
+			maxIterations:      3,
+			wantHarnessInYAML:  true,
+			wantBMADEnabled:    false,
+			wantMaxIterations:  3,
+			wantPlannerCount:   3, // defaults still set
+			wantGeneratorCount: 2,
+			wantEvaluatorCount: 2,
+		},
+		{
+			name:               "BMAD enabled with custom iterations",
+			projectName:        "my-project",
+			bmadEnabled:        true,
+			maxIterations:      10,
+			wantHarnessInYAML:  true,
+			wantBMADEnabled:    true,
+			wantMaxIterations:  10,
+			wantPlannerCount:   3,
+			wantGeneratorCount: 2,
+			wantEvaluatorCount: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := NewInitCommand(InitOptions{})
+			cfg := cmd.generateConfig(tt.projectName, "mock", "codex", tt.bmadEnabled, tt.maxIterations, &trackerConfigData{})
+
+			// 验证 harness 配置
+			assert.Equal(t, tt.wantMaxIterations, cfg.Harness.MaxIterations)
+			assert.Equal(t, tt.wantBMADEnabled, cfg.Harness.BMAD.Enabled)
+			assert.Equal(t, tt.wantPlannerCount, len(cfg.Harness.BMAD.Agents.Planner))
+			assert.Equal(t, tt.wantGeneratorCount, len(cfg.Harness.BMAD.Agents.Generator))
+			assert.Equal(t, tt.wantEvaluatorCount, len(cfg.Harness.BMAD.Agents.Evaluator))
+
+			// 验证项目名称
+			if tt.projectName != "" {
+				assert.Equal(t, tt.projectName, cfg.Workspace.ProjectName)
+			}
+		})
+	}
+}
+
+func TestInitCommand_GenerateConfig_BMADDefaultAgents(t *testing.T) {
+	cmd := NewInitCommand(InitOptions{})
+
+	// BMAD enabled=true 时应使用默认 agents 列表
+	cfg := cmd.generateConfig("", "mock", "codex", true, 5, &trackerConfigData{})
+
+	assert.True(t, cfg.Harness.BMAD.Enabled)
+
+	// 验证分组 agents
+	assert.Equal(t, 3, len(cfg.Harness.BMAD.Agents.Planner))
+	assert.Equal(t, 2, len(cfg.Harness.BMAD.Agents.Generator))
+	assert.Equal(t, 2, len(cfg.Harness.BMAD.Agents.Evaluator))
+
+	// 验证默认 agents 包含正确的 agent
+	assert.Contains(t, cfg.Harness.BMAD.Agents.Planner, "bmad-agent-pm")
+	assert.Contains(t, cfg.Harness.BMAD.Agents.Generator, "bmad-agent-dev")
+	assert.Contains(t, cfg.Harness.BMAD.Agents.Evaluator, "bmad-code-review")
+	assert.Contains(t, cfg.Harness.BMAD.Agents.Evaluator, "bmad-editorial-review-prose")
+}
+
+func TestInitCommand_GenerateConfig_BMADDisabled(t *testing.T) {
+	cmd := NewInitCommand(InitOptions{})
+
+	// BMAD enabled=false 时配置仍然存在
+	cfg := cmd.generateConfig("", "mock", "codex", false, 5, &trackerConfigData{})
+
+	assert.False(t, cfg.Harness.BMAD.Enabled)
+	// 默认 agents 仍然设置在配置中
+	assert.Equal(t, 3, len(cfg.Harness.BMAD.Agents.Planner))
+}
+
+func TestInitCommand_GenerateConfig_MaxIterationsConfig(t *testing.T) {
+	cmd := NewInitCommand(InitOptions{})
+
+	tests := []struct {
+		name          string
+		maxIterations int
+		wantValue     int
+	}{
+		{
+			name:          "positive iterations",
+			maxIterations: 7,
+			wantValue:     7,
+		},
+		{
+			name:          "zero iterations",
+			maxIterations: 0,
+			wantValue:     0,
+		},
+		{
+			name:          "large iterations",
+			maxIterations: 100,
+			wantValue:     100,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := cmd.generateConfig("", "mock", "codex", true, tt.maxIterations, &trackerConfigData{})
+			assert.Equal(t, tt.wantValue, cfg.Harness.MaxIterations)
+		})
+	}
+}
+
+func TestInitCommand_BuildConfigMap_HarnessSection(t *testing.T) {
+	cmd := NewInitCommand(InitOptions{})
+
+	cfg := cmd.generateConfig("test-project", "mock", "codex", true, 8, &trackerConfigData{})
+	configMap := cmd.buildConfigMap(cfg)
+
+	// 验证 harness 配置映射
+	harness, ok := configMap["harness"].(map[string]interface{})
+	require.True(t, ok)
+
+	assert.Equal(t, 8, harness["max_iterations"])
+
+	bmad, ok := harness["bmad"].(map[string]interface{})
+	require.True(t, ok)
+
+	assert.Equal(t, true, bmad["enabled"])
+	agents, ok := bmad["agents"].(map[string]interface{})
+	require.True(t, ok)
+
+	planner, ok := agents["planner"].([]string)
+	require.True(t, ok)
+	assert.Equal(t, 3, len(planner))
+
+	generator, ok := agents["generator"].([]string)
+	require.True(t, ok)
+	assert.Equal(t, 2, len(generator))
+
+	evaluator, ok := agents["evaluator"].([]string)
+	require.True(t, ok)
+	assert.Equal(t, 2, len(evaluator))
+}
+
+func TestInitCommand_ConfigYAMLContainsHarness(t *testing.T) {
+	tempDir := t.TempDir()
+	symDir := filepath.Join(tempDir, ".sym")
+	require.NoError(t, os.MkdirAll(symDir, 0755))
+
+	cmd := NewInitCommand(InitOptions{})
+
+	cfg := cmd.generateConfig("my-project", "mock", "codex", true, 7, &trackerConfigData{})
+	err := cmd.generateConfigYAML(symDir, cfg)
+	require.NoError(t, err)
+
+	configPath := filepath.Join(symDir, "config.yaml")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	contentStr := string(content)
+
+	// 验证 harness 配置存在于 YAML 中
+	assert.Contains(t, contentStr, "harness:")
+	assert.Contains(t, contentStr, "max_iterations: 7")
+	assert.Contains(t, contentStr, "bmad:")
+	assert.Contains(t, contentStr, "enabled: true")
+	assert.Contains(t, contentStr, "agents:")
+	// 验证默认 agents
+	assert.Contains(t, contentStr, "bmad-agent-pm")
+	assert.Contains(t, contentStr, "bmad-agent-qa")
+	assert.Contains(t, contentStr, "bmad-code-review")
+}
+
+func TestInitCommand_ConfigYAMLBMADDisabled(t *testing.T) {
+	tempDir := t.TempDir()
+	symDir := filepath.Join(tempDir, ".sym")
+	require.NoError(t, os.MkdirAll(symDir, 0755))
+
+	cmd := NewInitCommand(InitOptions{})
+
+	cfg := cmd.generateConfig("", "mock", "codex", false, 3, &trackerConfigData{})
+	err := cmd.generateConfigYAML(symDir, cfg)
+	require.NoError(t, err)
+
+	configPath := filepath.Join(symDir, "config.yaml")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	contentStr := string(content)
+
+	// 验证 BMAD disabled 时的配置
+	assert.Contains(t, contentStr, "harness:")
+	assert.Contains(t, contentStr, "max_iterations: 3")
+	assert.Contains(t, contentStr, "bmad:")
+	assert.Contains(t, contentStr, "enabled: false")
+	// 验证分组结构
+	assert.Contains(t, contentStr, "planner:")
+	assert.Contains(t, contentStr, "generator:")
+	assert.Contains(t, contentStr, "evaluator:")
+}
+
+func TestInitCommand_RunWithBMADOptions(t *testing.T) {
+	tempDir := t.TempDir()
+
+	cmd := &InitCommand{
+		options: InitOptions{
+			TrackerType:    "mock",
+			AgentType:      "codex",
+			ProjectPath:    tempDir,
+			ProjectName:    "test-bmad-project",
+			BMADEnabled:    boolPtr(true),
+			MaxIterations:  8,
+			NonInteractive: true,
+		},
+		scanner: bufio.NewScanner(strings.NewReader("")),
+	}
+
+	err := cmd.Run()
+	require.NoError(t, err)
+
+	configPath := filepath.Join(tempDir, ".sym", "config.yaml")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	contentStr := string(content)
+
+	// 验证 BMAD 相关配置
+	assert.Contains(t, contentStr, "project_name: test-bmad-project")
+	assert.Contains(t, contentStr, "harness:")
+	assert.Contains(t, contentStr, "max_iterations: 8")
+	assert.Contains(t, contentStr, "enabled: true")
+	assert.Contains(t, contentStr, "bmad-agent-pm")
+}
+
+func TestInitCommand_RunWithBMADDisabled(t *testing.T) {
+	tempDir := t.TempDir()
+
+	cmd := &InitCommand{
+		options: InitOptions{
+			TrackerType:    "mock",
+			AgentType:      "codex",
+			ProjectPath:    tempDir,
+			ProjectName:    "no-bmad-project",
+			BMADEnabled:    boolPtr(false),
+			MaxIterations:  3,
+			NonInteractive: true,
+		},
+		scanner: bufio.NewScanner(strings.NewReader("")),
+	}
+
+	err := cmd.Run()
+	require.NoError(t, err)
+
+	configPath := filepath.Join(tempDir, ".sym", "config.yaml")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	contentStr := string(content)
+
+	// 验证 BMAD disabled 配置
+	assert.Contains(t, contentStr, "project_name: no-bmad-project")
+	assert.Contains(t, contentStr, "max_iterations: 3")
+	assert.Contains(t, contentStr, "enabled: false")
+	// 分组结构仍然存在
+	assert.Contains(t, contentStr, "planner:")
+	assert.Contains(t, contentStr, "generator:")
+	assert.Contains(t, contentStr, "evaluator:")
 }

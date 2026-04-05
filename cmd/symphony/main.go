@@ -110,7 +110,7 @@ func main() {
 	fmt.Println("  Symphony - 编码代理编排服务")
 	fmt.Println("========================================")
 	fmt.Printf("工作流文件: %s\n", workflowPath)
-	fmt.Printf("跟踪器: %s (项目: %s)\n", cfg.Tracker.Kind, cfg.Tracker.ProjectSlug)
+	fmt.Printf("跟踪器: %s\n", cfg.Tracker.Kind)
 	fmt.Printf("工作空间根目录: %s\n", cfg.Workspace.Root)
 	fmt.Printf("轮询间隔: %dms\n", cfg.Polling.IntervalMs)
 	fmt.Printf("最大并发: %d\n", cfg.Agent.MaxConcurrentAgents)

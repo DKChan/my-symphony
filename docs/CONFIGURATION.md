@@ -19,9 +19,8 @@
 
 | 字段 | 规则 |
 |------|------|
-| `tracker.kind` | 必需，支持 `linear`、`github`、`mock` |
-| `tracker.api_key` | 非 mock 类型必需，支持 `$VAR` 格式 |
-| `tracker.project_slug` | Linear 类型必需 |
+| `tracker.kind` | 必需，支持 `github`、`mock`、`beads` |
+| `tracker.api_key` | 非 mock/beads 类型必需，支持 `$VAR` 格式 |
 | `tracker.repo` | GitHub 类型必需，格式 `owner/repo` |
 | `agent.kind` | 支持 `codex`、`claude`、`opencode` |
 | `codex.command` | Codex 类型必需 |
@@ -32,7 +31,7 @@
 
 ```yaml
 tracker:
-  api_key: $LINEAR_API_KEY  # 从环境变量 LINEAR_API_KEY 读取
+  api_key: $GITHUB_TOKEN  # 从环境变量 GITHUB_TOKEN 读取
 ```
 
 解析时会自动替换为对应的环境变量值。
@@ -42,9 +41,9 @@ tracker:
 ```yaml
 ---
 tracker:
-  kind: linear
-  api_key: $LINEAR_API_KEY
-  project_slug: MYPROJECT
+  kind: github
+  api_key: $GITHUB_TOKEN
+  repo: owner/repo
   active_states:
     - Todo
     - In Progress

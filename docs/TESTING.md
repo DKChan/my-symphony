@@ -39,9 +39,9 @@ func TestValidateDispatchConfig(t *testing.T) {
             name: "valid config",
             config: &config.Config{
                 Tracker: config.TrackerConfig{
-                    Kind:        "linear",
-                    APIKey:      "test-key",
-                    ProjectSlug: "TEST",
+                    Kind:    "github",
+                    APIKey:  "test-key",
+                    Repo:    "owner/repo",
                 },
                 Codex: config.CodexConfig{
                     Command: "codex app-server",
@@ -53,8 +53,8 @@ func TestValidateDispatchConfig(t *testing.T) {
             name: "missing tracker kind",
             config: &config.Config{
                 Tracker: config.TrackerConfig{
-                    APIKey:      "test-key",
-                    ProjectSlug: "TEST",
+                    APIKey: "test-key",
+                    Repo:   "owner/repo",
                 },
             },
             wantValid: false,
