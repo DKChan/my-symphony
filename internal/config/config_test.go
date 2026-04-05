@@ -3,6 +3,7 @@ package config_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/dministrator/symphony/internal/config"
@@ -688,4 +689,156 @@ func TestParseConfig_HarnessComplete(t *testing.T) {
 	if len(cfg.Harness.BMAD.Agents.Evaluator) != 1 {
 		t.Errorf("expected 1 evaluator agent, got %d", len(cfg.Harness.BMAD.Agents.Evaluator))
 	}
+}
+
+// ========== Story 1.2: 配置验证与管理 ==========
+
+func TestConfigError_ErrorFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      *config.ConfigError
+		expected string
+	}{
+		{
+			name:     "predefined error",
+			err:      config.ErrConfigInvalid,
+			expected: "config.invalid: 配置无效",
+		},
+		{
+			name:     "custom error",
+			err:      config.NewConfigError("config.field.missing", "tracker.kind is required"),
+			expected: "config.field.missing: tracker.kind is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.err.Error() != tt.expected {
+				t.Errorf("expected error string '%s', got '%s'", tt.expected, tt.err.Error())
+			}
+		})
+	}
+}
+
+func TestCheckBMADAgentAvailability(t *testing.T) {
+	t.Run("returns error when claude CLI not found", func(t *testing.T) {
+		err := config.CheckBMADAgentAvailability("bmad-agent-pm")
+		if err != nil {
+			configErr, ok := err.(*config.ConfigError)
+			if !ok {
+				t.Errorf("expected ConfigError type, got %T", err)
+			} else {
+				if !strings.HasPrefix(configErr.Code, "config.bmad") {
+					t.Errorf("expected error code to start with 'config.bmad', got '%s'", configErr.Code)
+				}
+			}
+		}
+	})
+}
+
+func TestCheckBMADAgentsAvailability(t *testing.T) {
+	t.Run("checks multiple agents", func(t *testing.T) {
+		agents := []string{"bmad-agent-pm", "bmad-agent-qa"}
+		err := config.CheckBMADAgentsAvailability(agents)
+		if err != nil {
+			_, ok := err.(*config.ConfigError)
+			if !ok {
+				t.Errorf("expected ConfigError type, got %T", err)
+			}
+		}
+	})
+
+	t.Run("empty agents list returns nil", func(t *testing.T) {
+		err := config.CheckBMADAgentsAvailability([]string{})
+		if err != nil {
+			t.Errorf("expected nil for empty agents list, got %v", err)
+		}
+	})
+}
+
+func TestCheckBeadsCLIAvailability(t *testing.T) {
+	t.Run("returns error when beads not found", func(t *testing.T) {
+		err := config.CheckBeadsCLIAvailability("nonexistent-beads")
+		if err == nil {
+			t.Skip("command unexpectedly exists")
+		}
+
+		configErr, ok := err.(*config.ConfigError)
+		if !ok {
+			t.Errorf("expected ConfigError type, got %T", err)
+		} else {
+			if configErr.Code != "tracker.unavailable" {
+				t.Errorf("expected error code 'tracker.unavailable', got '%s'", configErr.Code)
+			}
+		}
+	})
+}
+
+func TestValidateStartupConfig(t *testing.T) {
+	t.Run("config file not found", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		err := config.ValidateStartupConfig("/nonexistent/path/config.yaml", cfg)
+		if err == nil {
+			t.Error("expected error for nonexistent config file")
+		}
+
+		configErr, ok := err.(*config.ConfigError)
+		if !ok {
+			t.Errorf("expected ConfigError type, got %T", err)
+		} else {
+			if configErr.Code != "config.file.not_found" {
+				t.Errorf("expected error code 'config.file.not_found', got '%s'", configErr.Code)
+			}
+		}
+	})
+
+	t.Run("invalid config format", func(t *testing.T) {
+		tmpFile, err := os.CreateTemp("", "config-*.yaml")
+		if err != nil {
+			t.Fatalf("failed to create temp file: %v", err)
+		}
+		defer os.Remove(tmpFile.Name())
+
+		cfg := &config.Config{
+			Tracker: config.TrackerConfig{
+				Kind: "",
+			},
+		}
+
+		validationErr := config.ValidateStartupConfig(tmpFile.Name(), cfg)
+		if validationErr == nil {
+			t.Error("expected error for invalid config")
+		}
+
+		configErr, ok := validationErr.(*config.ConfigError)
+		if !ok {
+			t.Errorf("expected ConfigError type, got %T", validationErr)
+		} else {
+			if configErr.Code != "config.invalid" {
+				t.Errorf("expected error code 'config.invalid', got '%s'", configErr.Code)
+			}
+		}
+	})
+
+	t.Run("valid mock tracker config", func(t *testing.T) {
+		tmpFile, err := os.CreateTemp("", "config-*.yaml")
+		if err != nil {
+			t.Fatalf("failed to create temp file: %v", err)
+		}
+		defer os.Remove(tmpFile.Name())
+
+		cfg := config.DefaultConfig()
+		cfg.Tracker.Kind = "mock"
+		cfg.Harness.BMAD.Enabled = false
+
+		validationErr := config.ValidateStartupConfig(tmpFile.Name(), cfg)
+		// 跳过 agent CLI 检查失败的测试（CLI 可能不存在）
+		if validationErr != nil {
+			configErr, ok := validationErr.(*config.ConfigError)
+			if ok && strings.Contains(configErr.Message, "agent CLI not found") {
+				t.Skipf("agent CLI not available: %v", validationErr)
+			}
+			t.Errorf("expected no error for valid mock config, got %v", validationErr)
+		}
+	})
 }

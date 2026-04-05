@@ -936,3 +936,646 @@ func TestBeadsClient_runCommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(output), "beads")
 }
+
+// setupMockBeadsCLIWithFields 创建支持 --field 参数的模拟 Beads CLI 脚本
+func setupMockBeadsCLIWithFields(t *testing.T) (string, func()) {
+	tmpDir := t.TempDir()
+	cliPath := filepath.Join(tmpDir, beadsTestCLI)
+
+	// 创建支持更多命令的模拟 CLI 脚本
+	script := `#!/bin/bash
+case "$1" in
+  --version)
+    echo "beads v1.0.0"
+    ;;
+  issue)
+    case "$2" in
+      list)
+        state=""
+        for arg in "$@"; do
+          if [[ "$prev_arg" == "--state" ]]; then
+            state="$arg"
+          fi
+          prev_arg="$arg"
+        done
+        if [[ "$state" == "Todo" ]]; then
+          echo '[{"id":"1","identifier":"BEADS-1","title":"Task 1","state":"Todo","priority":1,"labels":["bug"]}]'
+        elif [[ "$state" == "In Progress" ]]; then
+          echo '[{"id":"2","identifier":"BEADS-2","title":"Task 2","state":"In Progress","priority":2}]'
+        else
+          echo '[]'
+        fi
+        ;;
+      show)
+        identifier="$3"
+        has_field=false
+        field_name=""
+        for arg in "$@"; do
+          if [[ "$arg" == "--field" ]]; then
+            has_field=true
+          fi
+          if [[ "$prev_arg" == "--field" ]]; then
+            field_name="$arg"
+          fi
+          prev_arg="$arg"
+        done
+        if [[ "$identifier" == "BEADS-1" ]]; then
+          if [[ "$has_field" == true ]]; then
+            # 返回特定字段
+            case "$field_name" in
+              bdd_content)
+                echo "Feature: Login\nScenario: User logs in"
+                ;;
+              architecture_content)
+                echo "# Architecture Design\n## Components"
+                ;;
+              tdd_content)
+                echo "Test: Unit tests for login"
+                ;;
+              verification_report)
+                echo '{"task_id":"1","task_identifier":"BEADS-1","task_title":"Task 1","generated_at":"2024-01-01T00:00:00Z","test_results":{"total":5,"passed":5,"failed":0},"overall_status":"PASS"}'
+                ;;
+              *)
+                echo ""
+                ;;
+            esac
+          elif [[ "$*" == *"--include-custom"* ]]; then
+            echo '{"id":"1","identifier":"BEADS-1","title":"Task 1","description":"Description 1","state":"Todo","priority":1,"labels":["bug"],"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z","custom":{"stage_state":{"name":"clarification","status":"in_progress","started_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z","round":1}}}'
+          else
+            echo '{"id":"1","identifier":"BEADS-1","title":"Task 1","description":"Description 1","state":"Todo","priority":1,"labels":["bug"],"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z"}'
+          fi
+        elif [[ "$identifier" == "BEADS-2" ]]; then
+          if [[ "$*" == *"--include-custom"* ]]; then
+            echo '{"id":"2","identifier":"BEADS-2","title":"Task 2","state":"In Progress","custom":{}}'
+          else
+            echo '{"id":"2","identifier":"BEADS-2","title":"Task 2","state":"In Progress"}'
+          fi
+        elif [[ "$identifier" == "BEADS-NO-CUSTOM" ]]; then
+          echo '{"id":"3","identifier":"BEADS-NO-CUSTOM","title":"No Custom","state":"Todo"}'
+        else
+          echo "Error: issue not found"
+          exit 1
+        fi
+        ;;
+      create)
+        title=""
+        desc=""
+        parent=""
+        blocked_by=""
+        for arg in "$@"; do
+          if [[ "$prev_arg" == "--title" ]]; then
+            title="$arg"
+          fi
+          if [[ "$prev_arg" == "--description" ]]; then
+            desc="$arg"
+          fi
+          if [[ "$prev_arg" == "--parent" ]]; then
+            parent="$arg"
+          fi
+          if [[ "$prev_arg" == "--blocked-by" ]]; then
+            blocked_by="$arg"
+          fi
+          prev_arg="$arg"
+        done
+        if [[ "$parent" != "" ]]; then
+          echo '{"id":"sub-1","identifier":"BEADS-SUB","title":"'"$title"'","description":"'"$desc"'","state":"Todo","parent":"'"$parent"'"}'
+        else
+          echo '{"id":"new-1","identifier":"BEADS-NEW","title":"'"$title"'","description":"'"$desc"'","state":"Todo"}'
+        fi
+        ;;
+      update)
+        echo '{"success":true}'
+        ;;
+      comment)
+        echo '{"success":true}'
+        ;;
+      comments)
+        identifier="$3"
+        if [[ "$identifier" == "BEADS-1" ]]; then
+          echo '[{"role":"user","content":"想要添加用户登录功能","timestamp":"2024-01-01T10:00:00Z"},{"role":"assistant","content":"请问登录方式是邮箱还是手机号？","timestamp":"2024-01-01T10:01:00Z"},{"role":"user","content":"邮箱","timestamp":"2024-01-01T10:02:00Z"}]'
+        elif [[ "$identifier" == "BEADS-2" ]]; then
+          echo '[]'
+        else
+          echo "Error: issue not found"
+          exit 1
+        fi
+        ;;
+      *)
+        echo "Unknown issue command: $2"
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "Unknown command: $1"
+    exit 1
+    ;;
+esac
+`
+
+	err := os.WriteFile(cliPath, []byte(script), 0755)
+	require.NoError(t, err)
+
+	return cliPath, func() {}
+}
+
+// TestBeadsClient_GetStageState_Success 测试获取阶段状态成功
+func TestBeadsClient_GetStageState_Success(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	stage, err := client.GetStageState(ctx, "BEADS-1")
+	require.NoError(t, err)
+	require.NotNil(t, stage)
+
+	assert.Equal(t, "clarification", stage.Name)
+	assert.Equal(t, "in_progress", stage.Status)
+	assert.Equal(t, 1, stage.Round)
+}
+
+// TestBeadsClient_GetStageState_NoCustom 测试无自定义数据
+func TestBeadsClient_GetStageState_NoCustom(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	stage, err := client.GetStageState(ctx, "BEADS-2")
+	require.NoError(t, err)
+	assert.Nil(t, stage)
+}
+
+// TestBeadsClient_GetStageState_Error 测试获取阶段状态错误
+func TestBeadsClient_GetStageState_Error(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	_, err := client.GetStageState(ctx, "NONEXISTENT")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "get task with custom failed")
+}
+
+// TestBeadsClient_CreateSubTask 测试创建子任务
+func TestBeadsClient_CreateSubTask(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	issue, err := client.CreateSubTask(ctx, "BEADS-1", "Sub Task", "Sub Description", []string{"BEADS-2"})
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+
+	assert.Equal(t, "sub-1", issue.ID)
+	assert.Equal(t, "BEADS-SUB", issue.Identifier)
+	assert.Equal(t, "Sub Task", issue.Title)
+	assert.Equal(t, "Todo", issue.State)
+}
+
+// TestBeadsClient_CreateSubTask_NoParent 测试创建无父任务的子任务
+func TestBeadsClient_CreateSubTask_NoParent(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	issue, err := client.CreateSubTask(ctx, "", "Independent Task", "Description", nil)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+
+	assert.Equal(t, "new-1", issue.ID)
+	assert.Equal(t, "BEADS-NEW", issue.Identifier)
+}
+
+// TestBeadsClient_CreateSubTask_Error 测试创建子任务错误
+func TestBeadsClient_CreateSubTask_Error(t *testing.T) {
+	tmpDir := t.TempDir()
+	cliPath := filepath.Join(tmpDir, "error_beads")
+
+	script := `#!/bin/bash
+case "$1" in
+  --version)
+    echo "beads v1.0.0"
+    ;;
+  issue)
+    if [[ "$2" == "create" ]]; then
+      echo "Error: failed to create subtask"
+      exit 1
+    fi
+    ;;
+esac
+`
+	err := os.WriteFile(cliPath, []byte(script), 0755)
+	require.NoError(t, err)
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	_, err = client.CreateSubTask(ctx, "BEADS-1", "Sub Task", "Description", nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "create subtask failed")
+}
+
+// TestBeadsClient_GetBDDContent 测试获取 BDD 内容
+func TestBeadsClient_GetBDDContent(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	content, err := client.GetBDDContent(ctx, "BEADS-1")
+	require.NoError(t, err)
+	assert.Contains(t, content, "Feature: Login")
+}
+
+// TestBeadsClient_GetBDDContent_Error 测试获取 BDD 内容错误
+func TestBeadsClient_GetBDDContent_Error(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	_, err := client.GetBDDContent(ctx, "NONEXISTENT")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "get BDD content failed")
+}
+
+// TestBeadsClient_UpdateBDDContent 测试更新 BDD 内容
+func TestBeadsClient_UpdateBDDContent(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.UpdateBDDContent(ctx, "BEADS-1", "New BDD content")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_UpdateBDDContent_Error 测试更新 BDD 内容错误
+func TestBeadsClient_UpdateBDDContent_Error(t *testing.T) {
+	tmpDir := t.TempDir()
+	cliPath := filepath.Join(tmpDir, "error_beads")
+
+	script := `#!/bin/bash
+case "$1" in
+  --version)
+    echo "beads v1.0.0"
+    ;;
+  issue)
+    if [[ "$2" == "update" ]]; then
+      echo "Error: update failed"
+      exit 1
+    fi
+    ;;
+esac
+`
+	err := os.WriteFile(cliPath, []byte(script), 0755)
+	require.NoError(t, err)
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err = client.UpdateBDDContent(ctx, "BEADS-1", "content")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "update BDD content failed")
+}
+
+// TestBeadsClient_ApproveBDD 测试通过 BDD 审核
+func TestBeadsClient_ApproveBDD(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.ApproveBDD(ctx, "BEADS-1")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_RejectBDD 测试驳回 BDD 审核
+func TestBeadsClient_RejectBDD(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.RejectBDD(ctx, "BEADS-1", "Not acceptable")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_GetArchitectureContent 测试获取架构内容
+func TestBeadsClient_GetArchitectureContent(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	content, err := client.GetArchitectureContent(ctx, "BEADS-1")
+	require.NoError(t, err)
+	assert.Contains(t, content, "Architecture Design")
+}
+
+// TestBeadsClient_UpdateArchitectureContent 测试更新架构内容
+func TestBeadsClient_UpdateArchitectureContent(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.UpdateArchitectureContent(ctx, "BEADS-1", "New architecture content")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_ApproveArchitecture 测试通过架构审核
+func TestBeadsClient_ApproveArchitecture(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.ApproveArchitecture(ctx, "BEADS-1")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_RejectArchitecture 测试驳回架构审核
+func TestBeadsClient_RejectArchitecture(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.RejectArchitecture(ctx, "BEADS-1", "Design issues")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_GetTDDContent 测试获取 TDD 内容
+func TestBeadsClient_GetTDDContent(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	content, err := client.GetTDDContent(ctx, "BEADS-1")
+	require.NoError(t, err)
+	assert.Contains(t, content, "Unit tests")
+}
+
+// TestBeadsClient_UpdateTDDContent 测试更新 TDD 内容
+func TestBeadsClient_UpdateTDDContent(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.UpdateTDDContent(ctx, "BEADS-1", "New TDD content")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_GetVerificationReport 测试获取验收报告
+func TestBeadsClient_GetVerificationReport(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	report, err := client.GetVerificationReport(ctx, "BEADS-1")
+	require.NoError(t, err)
+	require.NotNil(t, report)
+
+	assert.Equal(t, "BEADS-1", report.TaskIdentifier)
+	assert.Equal(t, "PASS", report.OverallStatus)
+}
+
+// TestBeadsClient_GetVerificationReport_Empty 测试获取空验收报告
+func TestBeadsClient_GetVerificationReport_Empty(t *testing.T) {
+	tmpDir := t.TempDir()
+	cliPath := filepath.Join(tmpDir, "empty_report_beads")
+
+	// 注意：bash echo "" 会输出一个换行符，所以 output 不为空
+	// 但不是有效的 JSON，所以会作为 RawContent 存储
+	script := `#!/bin/bash
+case "$1" in
+  --version)
+    echo "beads v1.0.0"
+    ;;
+  issue)
+    if [[ "$2" == "show" ]]; then
+      # 输出空内容（实际上是换行符）
+      echo ""
+    fi
+    ;;
+esac
+`
+	err := os.WriteFile(cliPath, []byte(script), 0755)
+	require.NoError(t, err)
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	report, err := client.GetVerificationReport(ctx, "BEADS-1")
+	require.NoError(t, err)
+	// 空 JSON 会被解析失败，作为 RawContent 存储
+	require.NotNil(t, report)
+	assert.Equal(t, "BEADS-1", report.TaskIdentifier)
+	// RawContent 包含换行符
+	assert.NotEmpty(t, report.RawContent)
+}
+
+// TestBeadsClient_UpdateVerificationReport 测试更新验收报告
+func TestBeadsClient_UpdateVerificationReport(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	report := &domain.VerificationReport{
+		TaskIdentifier: "BEADS-1",
+		OverallStatus:  "PASS",
+	}
+
+	err := client.UpdateVerificationReport(ctx, "BEADS-1", report)
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_ApproveVerification 测试通过验收
+func TestBeadsClient_ApproveVerification(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.ApproveVerification(ctx, "BEADS-1")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_RejectVerification 测试驳回验收
+func TestBeadsClient_RejectVerification(t *testing.T) {
+	cliPath, cleanup := setupMockBeadsCLIWithFields(t)
+	defer cleanup()
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	err := client.RejectVerification(ctx, "BEADS-1", "Needs more work")
+	assert.NoError(t, err)
+}
+
+// TestBeadsClient_AllBDDMethods_Error 测试所有 BDD 方法错误处理
+func TestBeadsClient_AllBDDMethods_Error(t *testing.T) {
+	tmpDir := t.TempDir()
+	cliPath := filepath.Join(tmpDir, "error_beads")
+
+	script := `#!/bin/bash
+case "$1" in
+  --version)
+    echo "beads v1.0.0"
+    ;;
+  issue)
+    echo "Error: command failed"
+    exit 1
+    ;;
+esac
+`
+	err := os.WriteFile(cliPath, []byte(script), 0755)
+	require.NoError(t, err)
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	// BDD methods
+	_, err = client.GetBDDContent(ctx, "BEADS-1")
+	assert.Error(t, err)
+
+	err = client.UpdateBDDContent(ctx, "BEADS-1", "content")
+	assert.Error(t, err)
+
+	err = client.ApproveBDD(ctx, "BEADS-1")
+	assert.Error(t, err)
+
+	err = client.RejectBDD(ctx, "BEADS-1", "reason")
+	assert.Error(t, err)
+}
+
+// TestBeadsClient_AllArchitectureMethods_Error 测试所有架构方法错误处理
+func TestBeadsClient_AllArchitectureMethods_Error(t *testing.T) {
+	tmpDir := t.TempDir()
+	cliPath := filepath.Join(tmpDir, "error_beads")
+
+	script := `#!/bin/bash
+case "$1" in
+  --version)
+    echo "beads v1.0.0"
+    ;;
+  issue)
+    echo "Error: command failed"
+    exit 1
+    ;;
+esac
+`
+	err := os.WriteFile(cliPath, []byte(script), 0755)
+	require.NoError(t, err)
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	// Architecture methods
+	_, err = client.GetArchitectureContent(ctx, "BEADS-1")
+	assert.Error(t, err)
+
+	err = client.UpdateArchitectureContent(ctx, "BEADS-1", "content")
+	assert.Error(t, err)
+
+	err = client.ApproveArchitecture(ctx, "BEADS-1")
+	assert.Error(t, err)
+
+	err = client.RejectArchitecture(ctx, "BEADS-1", "reason")
+	assert.Error(t, err)
+}
+
+// TestBeadsClient_AllVerificationMethods_Error 测试所有验收方法错误处理
+func TestBeadsClient_AllVerificationMethods_Error(t *testing.T) {
+	tmpDir := t.TempDir()
+	cliPath := filepath.Join(tmpDir, "error_beads")
+
+	script := `#!/bin/bash
+case "$1" in
+  --version)
+    echo "beads v1.0.0"
+    ;;
+  issue)
+    echo "Error: command failed"
+    exit 1
+    ;;
+esac
+`
+	err := os.WriteFile(cliPath, []byte(script), 0755)
+	require.NoError(t, err)
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	// Verification methods
+	_, err = client.GetVerificationReport(ctx, "BEADS-1")
+	assert.Error(t, err)
+
+	err = client.UpdateVerificationReport(ctx, "BEADS-1", &domain.VerificationReport{})
+	assert.Error(t, err)
+
+	err = client.ApproveVerification(ctx, "BEADS-1")
+	assert.Error(t, err)
+
+	err = client.RejectVerification(ctx, "BEADS-1", "reason")
+	assert.Error(t, err)
+}
+
+// TestBeadsClient_AllTDDMethods_Error 测试所有 TDD 方法错误处理
+func TestBeadsClient_AllTDDMethods_Error(t *testing.T) {
+	tmpDir := t.TempDir()
+	cliPath := filepath.Join(tmpDir, "error_beads")
+
+	script := `#!/bin/bash
+case "$1" in
+  --version)
+    echo "beads v1.0.0"
+    ;;
+  issue)
+    echo "Error: command failed"
+    exit 1
+    ;;
+esac
+`
+	err := os.WriteFile(cliPath, []byte(script), 0755)
+	require.NoError(t, err)
+
+	client := NewBeadsClientWithPath(cliPath)
+	ctx := context.Background()
+
+	// TDD methods
+	_, err = client.GetTDDContent(ctx, "BEADS-1")
+	assert.Error(t, err)
+
+	err = client.UpdateTDDContent(ctx, "BEADS-1", "content")
+	assert.Error(t, err)
+}

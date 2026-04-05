@@ -737,3 +737,103 @@ func (c *Config) ValidateSymphonyConfig() *Validation {
 		Errors: errors,
 	}
 }
+
+// ConfigError 配置错误（统一错误码格式）
+type ConfigError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *ConfigError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
+// 预定义错误
+var (
+	ErrConfigInvalid         = &ConfigError{Code: "config.invalid", Message: "配置无效"}
+	ErrBMADAgentUnavailable  = &ConfigError{Code: "config.bmad.unavailable", Message: "BMAD Agent 不可用"}
+	ErrBeadsCLIUnavailable   = &ConfigError{Code: "tracker.unavailable", Message: "Beads CLI 不可用"}
+	ErrConfigFileNotFound    = &ConfigError{Code: "config.file.not_found", Message: "配置文件不存在"}
+	ErrConfigYAMLInvalid     = &ConfigError{Code: "config.yaml.invalid", Message: "YAML 格式错误"}
+)
+
+// NewConfigError 创建新的配置错误
+func NewConfigError(code, message string) *ConfigError {
+	return &ConfigError{Code: code, Message: message}
+}
+
+// CheckBMADAgentAvailability 检查单个 BMAD Agent 可用性
+func CheckBMADAgentAvailability(agentName string) error {
+	// BMAD agents 通过 claude code CLI 调用，检查 claude 是否可用
+	if _, err := exec.LookPath("claude"); err != nil {
+		return NewConfigError("config.bmad.unavailable",
+			fmt.Sprintf("BMAD Agent '%s' 需要 claude CLI，但未找到", agentName))
+	}
+	return nil
+}
+
+// CheckBMADAgentsAvailability 批量检查 BMAD Agent 可用性
+func CheckBMADAgentsAvailability(agents []string) error {
+	for _, agent := range agents {
+		if err := CheckBMADAgentAvailability(agent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CheckBeadsCLIAvailability 检查 Beads CLI 可用性
+func CheckBeadsCLIAvailability(beadsPath string) error {
+	if beadsPath == "" {
+		beadsPath = "beads"
+	}
+	if _, err := exec.LookPath(beadsPath); err != nil {
+		return ErrBeadsCLIUnavailable
+	}
+	return nil
+}
+
+// ValidateStartupConfig 启动时完整配置验证
+// 验证配置格式、BMAD Agent 可用性、Beads CLI 可用性
+func ValidateStartupConfig(configPath string, cfg *Config) error {
+	// 1. 验证配置文件存在
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return ErrConfigFileNotFound
+	}
+
+	// 2. 验证配置格式
+	dispatchValidation := cfg.ValidateDispatchConfig()
+	if !dispatchValidation.Valid {
+		return NewConfigError("config.invalid",
+			fmt.Sprintf("配置验证失败: %s", strings.Join(dispatchValidation.Errors, "; ")))
+	}
+
+	symphonyValidation := cfg.ValidateSymphonyConfig()
+	if !symphonyValidation.Valid {
+		return NewConfigError("config.invalid",
+			fmt.Sprintf("Symphony 配置验证失败: %s", strings.Join(symphonyValidation.Errors, "; ")))
+	}
+
+	// 3. 验证 BMAD Agent 可用性（如果启用）
+	if cfg.Harness.BMAD.Enabled {
+		allAgents := make([]string, 0)
+		allAgents = append(allAgents, cfg.Harness.BMAD.Agents.Planner...)
+		allAgents = append(allAgents, cfg.Harness.BMAD.Agents.Generator...)
+		allAgents = append(allAgents, cfg.Harness.BMAD.Agents.Evaluator...)
+
+		if len(allAgents) > 0 {
+			if err := CheckBMADAgentsAvailability(allAgents); err != nil {
+				return err
+			}
+		}
+	}
+
+	// 4. 验证 Beads CLI 可用性（如果使用 beads tracker）
+	if cfg.Tracker.Kind == "beads" {
+		if err := CheckBeadsCLIAvailability(""); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
