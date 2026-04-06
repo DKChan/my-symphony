@@ -37,6 +37,15 @@ func TestNewTracker(t *testing.T) {
 			wantType: "*tracker.BeadsClient",
 		},
 		{
+			name: "file tracker",
+			cfg: &config.Config{
+				Tracker: config.TrackerConfig{
+					Kind: "file",
+				},
+			},
+			wantType: "*tracker.FileClient",
+		},
+		{
 			name: "github tracker",
 			cfg: &config.Config{
 				Tracker: config.TrackerConfig{
@@ -110,6 +119,8 @@ func getZeroValueForType(typeName string) interface{} {
 		return &MockClient{}
 	case "*tracker.BeadsClient":
 		return &BeadsClient{}
+	case "*tracker.FileClient":
+		return &FileClient{}
 	case "*tracker.GitHubClient":
 		return &GitHubClient{}
 	default:

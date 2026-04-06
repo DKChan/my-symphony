@@ -101,6 +101,8 @@ func NewTracker(cfg *config.Config) Tracker {
 		return NewMockClient(cfg.Tracker.MockIssues)
 	case "beads":
 		return NewBeadsClient()
+	case "file":
+		return NewFileClient()
 	default:
 		// 默认 mock
 		return NewMockClient(nil)

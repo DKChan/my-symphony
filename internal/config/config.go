@@ -30,7 +30,7 @@ type Config struct {
 
 // TrackerConfig 跟踪器配置
 type TrackerConfig struct {
-	// Kind 跟踪器类型：github、mock 或 beads
+	// Kind 跟踪器类型：github、mock、beads 或 file
 	Kind string `json:"kind"`
 	// Endpoint API端点
 	Endpoint string `json:"endpoint"`

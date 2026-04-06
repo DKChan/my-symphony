@@ -854,6 +854,100 @@ And 显示状态变化动画
 
 ---
 
+## Epic 8: FileTracker 实现
+
+提供零依赖的文件系统 Tracker 实现，减少第三方工具依赖。
+
+### Story 8.1: FileTracker 文件结构设计
+
+**As a** 系统架构师
+**I want** 设计 FileTracker 的文件存储结构
+**So that** 可以用文件系统管理任务状态和详情
+
+**Acceptance Criteria:**
+
+```gherkin
+Given 一个新需求任务 SYM-001
+When 创建任务文件结构
+Then 生成 .sym/SYM-001/task.md 状态索引文件
+And 生成 Planner/Generator/Evaluator 子任务目录
+And 状态索引使用 YAML frontmatter 格式
+And 子任务详情文件按类别组织
+```
+
+**FRs covered:** NFR4, FR60
+
+---
+
+### Story 8.2: FileClient 实现
+
+**As a** 系统架构师
+**I want** 实现 FileClient 满足 Tracker 接口
+**So that** 系统可以用文件系统作为 Tracker 后端
+
+**Acceptance Criteria:**
+
+```gherkin
+Given tracker.Kind 配置为 "file"
+When NewTracker 创建 Tracker
+Then 返回 FileClient 实例
+And FileClient 实现所有 Tracker 接口方法
+And CreateTask 创建文件结构
+And GetTask 从文件读取状态
+And UpdateStage 更新状态索引文件
+And AppendConversation 写入子任务详情文件
+```
+
+**FRs covered:** FR61
+
+---
+
+### Story 8.3: 并发写入安全
+
+**As a** 系统架构师
+**I want** FileTracker 支持并发写入安全
+**So that** 多个子 agent 同时完成时不会产生文件冲突
+
+**Acceptance Criteria:**
+
+```gherkin
+Given 调度器作为唯一写入者
+When 子 agent 完成任务
+Then 子 agent 回调调度器更新内存状态
+And 调度器串行化写入文件
+And 无并发写文件问题
+
+Given Web UI 读取状态
+When 多个并发读取请求
+Then 文件读取不阻塞
+And 返回一致的状态视图
+```
+
+**FRs covered:** NFR4
+
+---
+
+### Story 8.4: Web UI 文件读取适配
+
+**As a** 开发者
+**I want** Web UI 能读取 FileTracker 的文件格式
+**So that** 可以在页面展示任务状态
+
+**Acceptance Criteria:**
+
+```gherkin
+Given tracker.Kind 为 "file"
+When Web UI 加载任务列表
+Then 解析 .sym/*/task.md 状态索引
+And 解析 YAML frontmatter 获取状态
+And 展示三类任务进度
+And 展示迭代历史
+```
+
+**FRs covered:** FR53, FR54
+
+---
+
 ## Story Summary
 
 | Epic | Stories | Priority |
@@ -865,7 +959,8 @@ And 显示状态变化动画
 | Epic 5: 迭代回流机制 | 5 | P0 |
 | Epic 6: Beads 任务结构适配 | 4 | P0 |
 | Epic 7: Web UI 适配 | 4 | P1 |
-| **Total** | **35** | |
+| Epic 8: FileTracker 实现 | 4 | P1 |
+| **Total** | **39** | |
 
 ---
 
@@ -890,4 +985,7 @@ Phase 5: 迭代机制
 
 Phase 6: UI 适配
 └── Epic 7 (Story 7.1-7.4)
+
+Phase 7: FileTracker (可选)
+└── Epic 8 (Story 8.1-8.4)
 ```
