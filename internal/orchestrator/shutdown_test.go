@@ -205,8 +205,12 @@ func TestShutdownManagerClearSavedStates(t *testing.T) {
 
 	// 创建状态文件
 	savePath := filepath.Join(cfg.Workspace.Root, ".symphony", "shutdown_state.json")
-	os.MkdirAll(filepath.Dir(savePath), 0755)
-	os.WriteFile(savePath, []byte("{}"), 0644)
+	if err := os.MkdirAll(filepath.Dir(savePath), 0755); err != nil {
+		t.Fatalf("failed to create directory: %v", err)
+	}
+	if err := os.WriteFile(savePath, []byte("{}"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
 
 	assert.FileExists(t, savePath)
 

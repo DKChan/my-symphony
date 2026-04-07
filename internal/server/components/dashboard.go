@@ -464,6 +464,11 @@ func renderConversationHistory(history []domain.ConversationTurn) string {
 
 // getStageDisplay 获取阶段显示名称
 func getStageDisplay(stageName string) string {
+	// 先尝试使用 workflow 包的阶段名称映射（用于任务阶段）
+	if displayName := workflow.GetStageDisplayName(workflow.StageName(stageName)); displayName != stageName {
+		return displayName
+	}
+	// 如果不是任务阶段，使用 Kanban 列配置
 	stageConfig := common.GetKanbanStageConfig(stageName)
 	return stageConfig.Title
 }

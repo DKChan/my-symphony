@@ -30,7 +30,7 @@ func TestCheckRoundLimit(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-round-limit"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 检查初始状态（轮次为0，不应达到上限）
 	reached, currentRound, maxRounds, err := manager.CheckRoundLimit(taskID)
@@ -50,7 +50,7 @@ func TestCheckRoundLimit(t *testing.T) {
 
 	// 增加轮次到上限
 	for i := 0; i < 5; i++ {
-		engine.IncrementRound(taskID)
+		_, _ = engine.IncrementRound(taskID)
 	}
 
 	// 再次检查（轮次为5，应达到上限）
@@ -86,7 +86,7 @@ func TestSkipClarification(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-skip"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 跳过澄清
 	wf, err := manager.SkipClarification(taskID)
@@ -128,8 +128,8 @@ func TestSkipClarificationNotInClarificationStage(t *testing.T) {
 
 	// 初始化任务并推进到下一阶段
 	taskID := "test-skip-invalid"
-	engine.InitTask(taskID)
-	engine.AdvanceStage(taskID) // 推进到BDD评审
+	_, _ = engine.InitTask(taskID)
+	_, _ = engine.AdvanceStage(taskID) // 推进到BDD评审
 
 	// 尝试跳过澄清（应该失败）
 	_, err := manager.SkipClarification(taskID)
@@ -158,11 +158,11 @@ func TestHandleRoundLimitReached(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-limit-reached"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 增加轮次到上限
 	for i := 0; i < 3; i++ {
-		engine.IncrementRound(taskID)
+		_, _ = engine.IncrementRound(taskID)
 	}
 
 	// 处理达到上限
@@ -202,7 +202,7 @@ func TestIncrementRoundWithLimitCheck(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-increment"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 增加轮次并检查上限
 	for i := 1; i <= 3; i++ {
@@ -231,11 +231,11 @@ func TestGetClarificationStatus(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-status"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 增加轮次
-	engine.IncrementRound(taskID)
-	engine.IncrementRound(taskID)
+	_, _ = engine.IncrementRound(taskID)
+	_, _ = engine.IncrementRound(taskID)
 
 	// 获取状态
 	status, err := manager.GetClarificationStatus(taskID)
@@ -273,8 +273,8 @@ func TestGetClarificationStatusAfterSkip(t *testing.T) {
 
 	// 初始化任务并跳过
 	taskID := "test-status-skip"
-	engine.InitTask(taskID)
-	manager.SkipClarification(taskID)
+	_, _ = engine.InitTask(taskID)
+	_, _ = manager.SkipClarification(taskID)
 
 	// 获取状态
 	status, err := manager.GetClarificationStatus(taskID)
@@ -300,7 +300,7 @@ func TestCanSkipClarification(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-can-skip"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 应该可以跳过
 	canSkip, err := manager.CanSkipClarification(taskID)
@@ -312,7 +312,7 @@ func TestCanSkipClarification(t *testing.T) {
 	}
 
 	// 推进到下一阶段
-	engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	// 不应该可以跳过
 	canSkip, err = manager.CanSkipClarification(taskID)
@@ -331,8 +331,8 @@ func TestCanSkipClarificationAfterSkip(t *testing.T) {
 
 	// 初始化任务并跳过
 	taskID := "test-can-skip-after-skip"
-	engine.InitTask(taskID)
-	manager.SkipClarification(taskID)
+	_, _ = engine.InitTask(taskID)
+	_, _ = manager.SkipClarification(taskID)
 
 	// 不应该可以跳过（已经在BDD阶段）
 	canSkip, err := manager.CanSkipClarification(taskID)
@@ -351,7 +351,7 @@ func TestIsInClarificationStage(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-in-stage"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 应该在澄清阶段
 	inStage, err := manager.IsInClarificationStage(taskID)
@@ -363,7 +363,7 @@ func TestIsInClarificationStage(t *testing.T) {
 	}
 
 	// 推进到下一阶段
-	engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	// 不应该在澄清阶段
 	inStage, err = manager.IsInClarificationStage(taskID)
@@ -382,7 +382,7 @@ func TestCompleteClarification(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-complete"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 正常完成澄清（不标记不完整）
 	wf, err := manager.CompleteClarification(taskID)
@@ -416,7 +416,7 @@ func TestShouldAdvanceToNeedsAttention(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-should-advance"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 初始状态不应该需要 attention
 	should, err := manager.ShouldAdvanceToNeedsAttention(taskID)
@@ -429,7 +429,7 @@ func TestShouldAdvanceToNeedsAttention(t *testing.T) {
 
 	// 增加轮次到上限
 	for i := 0; i < 3; i++ {
-		engine.IncrementRound(taskID)
+		_, _ = engine.IncrementRound(taskID)
 	}
 
 	// 达到上限后应该需要 attention
@@ -449,7 +449,7 @@ func TestMarkIncomplete(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-mark-incomplete"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 标记不完整（使用自定义原因）
 	wf, err := manager.MarkIncomplete(taskID, workflow.ReasonUserSkip)
@@ -495,7 +495,7 @@ func TestEngineIsIncomplete(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-engine-incomplete"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 初始状态不应该是不完整
 	incomplete, err := engine.IsIncomplete(taskID)
@@ -507,7 +507,7 @@ func TestEngineIsIncomplete(t *testing.T) {
 	}
 
 	// 跳过澄清
-	manager.SkipClarification(taskID)
+	_, _ = manager.SkipClarification(taskID)
 
 	// 应该标记为不完整
 	incomplete, err = engine.IsIncomplete(taskID)
@@ -527,14 +527,14 @@ func TestEngineIsNeedsAttention(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-engine-needs-attention"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 增加轮次到上限
-	engine.IncrementRound(taskID)
-	engine.IncrementRound(taskID)
+	_, _ = engine.IncrementRound(taskID)
+	_, _ = engine.IncrementRound(taskID)
 
 	// 处理达到上限
-	manager.HandleRoundLimitReached(taskID)
+	_, _ = manager.HandleRoundLimitReached(taskID)
 
 	// 应该标记为需要人工处理
 	needsAttention, err := engine.IsNeedsAttention(taskID)
@@ -553,10 +553,10 @@ func TestEngineGetIncompleteReason(t *testing.T) {
 
 	// 初始化任务
 	taskID := "test-engine-reason"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 跳过澄清
-	manager.SkipClarification(taskID)
+	_, _ = manager.SkipClarification(taskID)
 
 	// 获取原因
 	reason, err := engine.GetIncompleteReason(taskID)
@@ -788,7 +788,7 @@ func TestSubmitAnswer_NeedsMoreClarification(t *testing.T) {
 	taskID := "test-submit-needs-more"
 	identifier := "TEST-1"
 	mockTracker.AddTask(identifier, taskID, "Test Task")
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 提交一个简短回答（应该需要更多澄清）
 	result, err := manager.SubmitAnswer(context.Background(), taskID, identifier, "yes")
@@ -822,11 +822,11 @@ func TestSubmitAnswer_CompleteClarification(t *testing.T) {
 	taskID := "test-submit-complete"
 	identifier := "TEST-2"
 	mockTracker.AddTask(identifier, taskID, "Test Task")
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 增加轮次以便满足完成条件
-	engine.IncrementRound(taskID)
-	engine.IncrementRound(taskID)
+	_, _ = engine.IncrementRound(taskID)
+	_, _ = engine.IncrementRound(taskID)
 
 	// 提交一个明确的回答
 	result, err := manager.SubmitAnswer(context.Background(), taskID, identifier, "我需要实现用户登录功能，包括用户名密码登录和第三方登录")
@@ -857,10 +857,10 @@ func TestSubmitAnswer_RoundLimitReached(t *testing.T) {
 	taskID := "test-submit-limit"
 	identifier := "TEST-3"
 	mockTracker.AddTask(identifier, taskID, "Test Task")
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 增加轮次到上限-1
-	engine.IncrementRound(taskID)
+	_, _ = engine.IncrementRound(taskID)
 
 	// 提交回答（将达到上限）
 	result, err := manager.SubmitAnswer(context.Background(), taskID, identifier, "test answer")
@@ -885,7 +885,7 @@ func TestSubmitAnswer_NoTracker(t *testing.T) {
 	// 初始化任务
 	taskID := "test-submit-no-tracker"
 	identifier := "TEST-4"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 提交回答（应该失败，因为没有 tracker）
 	_, err := manager.SubmitAnswer(context.Background(), taskID, identifier, "test answer")
@@ -917,8 +917,8 @@ func TestSubmitAnswer_WrongStage(t *testing.T) {
 	taskID := "test-submit-wrong-stage"
 	identifier := "TEST-6"
 	mockTracker.AddTask(identifier, taskID, "Test Task")
-	engine.InitTask(taskID)
-	engine.AdvanceStage(taskID) // 推进到 BDD 评审阶段
+	_, _ = engine.InitTask(taskID)
+	_, _ = engine.AdvanceStage(taskID) // 推进到 BDD 评审阶段
 
 	// 尝试提交回答（应该失败，因为不在澄清阶段）
 	_, err := manager.SubmitAnswer(context.Background(), taskID, identifier, "test answer")
@@ -937,7 +937,7 @@ func TestGetClarificationState(t *testing.T) {
 	taskID := "test-get-state"
 	identifier := "TEST-7"
 	mockTracker.AddTask(identifier, taskID, "Test Task")
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 获取澄清状态
 	result, err := manager.GetClarificationState(context.Background(), taskID, identifier)
@@ -983,7 +983,7 @@ func TestAnalyzeAnswer_ShortAnswer(t *testing.T) {
 	taskID := "test-analyze-short"
 	identifier := "TEST-9"
 	mockTracker.AddTask(identifier, taskID, "Test Task")
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 提交短回答
 	result, err := manager.SubmitAnswer(context.Background(), taskID, identifier, "ok")
@@ -1006,7 +1006,7 @@ func TestAnalyzeAnswer_UnclearKeywords(t *testing.T) {
 	taskID := "test-analyze-unclear"
 	identifier := "TEST-10"
 	mockTracker.AddTask(identifier, taskID, "Test Task")
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 提交包含不确定关键词的回答
 	result, err := manager.SubmitAnswer(context.Background(), taskID, identifier, "这个需求我不太清楚具体怎么实现")
@@ -1045,8 +1045,8 @@ func TestBDDReviewManager_ApproveBDD(t *testing.T) {
 	manager := workflow.NewBDDReviewManager(engine)
 
 	taskID := "test-bdd-approve"
-	engine.InitTask(taskID)
-	engine.AdvanceStage(taskID) // clarification -> bdd_review
+	_, _ = engine.InitTask(taskID)
+	_, _ = engine.AdvanceStage(taskID) // clarification -> bdd_review
 
 	// 验证当前阶段
 	wf := engine.GetWorkflow(taskID)
@@ -1077,7 +1077,7 @@ func TestBDDReviewManager_ApproveBDD_NotInBDDReviewStage(t *testing.T) {
 	manager := workflow.NewBDDReviewManager(engine)
 
 	taskID := "test-bdd-approve-invalid"
-	engine.InitTask(taskID) // 在澄清阶段
+	_, _ = engine.InitTask(taskID) // 在澄清阶段
 
 	// 尝试通过 BDD 审核（应该失败）
 	_, err := manager.ApproveBDD(taskID)
@@ -1101,8 +1101,8 @@ func TestBDDReviewManager_RejectBDD(t *testing.T) {
 	manager := workflow.NewBDDReviewManager(engine)
 
 	taskID := "test-bdd-reject"
-	engine.InitTask(taskID)
-	engine.AdvanceStage(taskID) // clarification -> bdd_review
+	_, _ = engine.InitTask(taskID)
+	_, _ = engine.AdvanceStage(taskID) // clarification -> bdd_review
 
 	// 驳回 BDD 审核
 	reason := "BDD 规则不符合要求"
@@ -1144,7 +1144,7 @@ func TestBDDReviewManager_RejectBDD_NotInBDDReviewStage(t *testing.T) {
 	manager := workflow.NewBDDReviewManager(engine)
 
 	taskID := "test-bdd-reject-invalid"
-	engine.InitTask(taskID) // 在澄清阶段
+	_, _ = engine.InitTask(taskID) // 在澄清阶段
 
 	_, err := manager.RejectBDD(taskID, "test reason")
 	if err == nil {
@@ -1167,8 +1167,8 @@ func TestBDDReviewManager_GetBDDReviewStatus(t *testing.T) {
 	manager := workflow.NewBDDReviewManager(engine)
 
 	taskID := "test-bdd-status"
-	engine.InitTask(taskID)
-	engine.AdvanceStage(taskID) // clarification -> bdd_review
+	_, _ = engine.InitTask(taskID)
+	_, _ = engine.AdvanceStage(taskID) // clarification -> bdd_review
 
 	// 获取 BDD 审核状态
 	status, err := manager.GetBDDReviewStatus(taskID)
@@ -1211,7 +1211,7 @@ func TestBDDReviewManager_CanApproveOrReject(t *testing.T) {
 	manager := workflow.NewBDDReviewManager(engine)
 
 	taskID := "test-can-approve-reject"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 在澄清阶段，不能审核
 	canApproveOrReject, err := manager.CanApproveOrReject(taskID)
@@ -1223,7 +1223,7 @@ func TestBDDReviewManager_CanApproveOrReject(t *testing.T) {
 	}
 
 	// 推进到 BDD 审核阶段
-	engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	// 在 BDD 审核阶段，可以审核
 	canApproveOrReject, err = manager.CanApproveOrReject(taskID)
@@ -1250,7 +1250,7 @@ func TestBDDReviewManager_IsInBDDReviewStage(t *testing.T) {
 	manager := workflow.NewBDDReviewManager(engine)
 
 	taskID := "test-is-in-bdd"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 在澄清阶段
 	inStage, err := manager.IsInBDDReviewStage(taskID)
@@ -1262,7 +1262,7 @@ func TestBDDReviewManager_IsInBDDReviewStage(t *testing.T) {
 	}
 
 	// 推进到 BDD 审核阶段
-	engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	// 在 BDD 审核阶段
 	inStage, err = manager.IsInBDDReviewStage(taskID)

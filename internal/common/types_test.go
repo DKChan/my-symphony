@@ -897,9 +897,9 @@ func TestTaskStageToKanbanColumn(t *testing.T) {
 		// 已完成
 		{"completed", "done"},
 		{"cancelled", "done"},
-		{"needs_attention", "done"},
+		{"needs_attention", "evaluator"}, // needs_attention 任务需要人工处理，放入评估器
 		// 默认
-		{"unknown", "backlog"},
+		{"unknown", "generator"}, // 未知阶段放入生成器（正在运行的任务）
 		{"", "backlog"},
 	}
 

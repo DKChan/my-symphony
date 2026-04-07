@@ -641,7 +641,7 @@ func (g *BDDGenerator) TriggerBDDGeneration(
 	result, err := g.GenerateBDDRules(ctx, task, clarificationHistory)
 	if err != nil {
 		// 生成失败，标记阶段失败
-		g.engine.FailStage(task.ID, fmt.Sprintf("BDD generation failed: %v", err))
+		_, _ = g.engine.FailStage(task.ID, fmt.Sprintf("BDD generation failed: %v", err))
 		return result, err
 	}
 

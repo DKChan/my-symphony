@@ -71,38 +71,29 @@ func (r *claudeRunner) RunAttempt(
 	turnCount := 0
 	tokenUsage := &TokenUsage{}
 
-	for turnNum := 1; turnNum <= r.cfg.Agent.MaxTurns; turnNum++ {
-		turnPrompt := prompt
-		if turnNum > 1 {
-			turnPrompt = "Continue working on the issue. Check if there's more work to do."
-		}
+	// Claude 每次调用是独立的，不支持多 turn 续行，只执行一次
+	result, err := r.runOnce(ctx, workspacePath, prompt, sessionID, callback)
+	if err != nil {
+		return &RunAttemptResult{
+			Success:    false,
+			Error:      err,
+			TurnCount:  turnCount,
+			TokenUsage: tokenUsage,
+		}, nil
+	}
 
-		result, err := r.runOnce(ctx, workspacePath, turnPrompt, sessionID, callback)
-		if err != nil {
-			return &RunAttemptResult{
-				Success:    false,
-				Error:      err,
-				TurnCount:  turnCount,
-				TokenUsage: tokenUsage,
-			}, nil
-		}
+	turnCount++
+	tokenUsage.InputTokens += result.inputTokens
+	tokenUsage.OutputTokens += result.outputTokens
+	tokenUsage.TotalTokens += result.inputTokens + result.outputTokens
 
-		turnCount++
-		tokenUsage.InputTokens += result.inputTokens
-		tokenUsage.OutputTokens += result.outputTokens
-		tokenUsage.TotalTokens += result.inputTokens + result.outputTokens
-
-		if !result.success {
-			return &RunAttemptResult{
-				Success:    false,
-				Error:      fmt.Errorf("claude run failed: %s", result.errMsg),
-				TurnCount:  turnCount,
-				TokenUsage: tokenUsage,
-			}, nil
-		}
-
-		// Claude 每次调用是独立的，不支持多 turn 续行
-		break
+	if !result.success {
+		return &RunAttemptResult{
+			Success:    false,
+			Error:      fmt.Errorf("claude run failed: %s", result.errMsg),
+			TurnCount:  turnCount,
+			TokenUsage: tokenUsage,
+		}, nil
 	}
 
 	return &RunAttemptResult{

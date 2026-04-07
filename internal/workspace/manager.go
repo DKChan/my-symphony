@@ -118,7 +118,7 @@ func (m *Manager) RemoveWorkspace(ctx context.Context, workspacePath string) err
 	}
 
 	// 运行删除前钩子
-	m.RunBeforeRemoveHook(ctx, workspacePath)
+	_ = m.RunBeforeRemoveHook(ctx, workspacePath)
 
 	// 删除目录
 	if err := os.RemoveAll(workspacePath); err != nil {

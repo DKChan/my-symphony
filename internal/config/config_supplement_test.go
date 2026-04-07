@@ -261,8 +261,8 @@ func TestParseStringList(t *testing.T) {
 
 			result := cfg.Tracker.ActiveStates
 
-			// 如果期望是 nil 或空数组，应该保持默认值（2个元素）
-			if tt.expected == nil || len(tt.expected) == 0 {
+			// 如果期望是空数组，应该保持默认值（2个元素）
+			if len(tt.expected) == 0 {
 				// 应该保持默认值
 				if len(result) != 2 {
 					t.Errorf("expected to keep default values (2 elements), got %d elements: %v", len(result), result)

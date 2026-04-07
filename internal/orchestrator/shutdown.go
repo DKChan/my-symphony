@@ -156,8 +156,8 @@ func (sm *ShutdownManager) TerminateAgents() {
 	for issueID, cmd := range cmds {
 		if cmd != nil && cmd.Process != nil {
 			fmt.Printf("终止 Agent 进程: %s\n", issueID)
-			cmd.Process.Kill()
-			cmd.Wait()
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
 		}
 		// 无论进程是否有效，都从映射中移除
 		sm.UnregisterAgentProcess(issueID)

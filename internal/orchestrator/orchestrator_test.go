@@ -119,7 +119,6 @@ func TestShouldDispatch(t *testing.T) {
 	// 测试 Todo 状态的阻塞规则
 	t.Run("todo with blockers", func(t *testing.T) {
 		doneState := "Done"
-		todoState := "Todo"
 		inProgressState := "In Progress"
 
 		issue := createTestIssue("2", "TEST-2", "Test Issue 2", "Todo", 2, time.Now())
@@ -131,17 +130,14 @@ func TestShouldDispatch(t *testing.T) {
 			t.Error("expected Todo to be active state")
 		}
 
-		// 阻塞项为终态，应该可以调度
-		if cfg.IsTerminalState(doneState) {
-			// 阻塞项为终态，允许调度
+		// 验证阻塞项状态检查逻辑
+		// 阻塞项为终态时，允许调度；阻塞项为非终态时，不允许调度
+		// cfg.IsTerminalState 用于判断阻塞项是否为终态
+		if !cfg.IsTerminalState(doneState) {
+			t.Error("expected Done to be terminal state")
 		}
-
-		// 阻塞项为非终态，不应该调度
-		issue.BlockedBy = []domain.BlockerRef{
-			{State: &inProgressState},
-		}
-		if !cfg.IsTerminalState(inProgressState) && cfg.IsActiveState(todoState) {
-			// 有非终态阻塞项，不应该调度
+		if cfg.IsTerminalState(inProgressState) {
+			t.Error("expected InProgress to not be terminal state")
 		}
 	})
 
@@ -161,15 +157,7 @@ func TestHasAvailableSlots(t *testing.T) {
 	}
 
 	// 槽位检查基于 Running 集合大小
-	if len(state.Running) < 2 {
-		// 应该有可用槽位
-	}
-
-	// 模拟填满槽位
-	if len(state.Running) >= 2 {
-		// 没有可用槽位
-	}
-
+	// 模拟填满槽位时，没有可用槽位
 	// 使用 state 变量避免未使用警告
 	_ = state.RetryAttempts
 }
@@ -211,23 +199,10 @@ func TestSortForDispatch(t *testing.T) {
 	// 4. TEST-3 (priority=3)
 
 	// 优先级排序
-	if issues[0].Priority != nil && issues[1].Priority != nil {
-		if *issues[0].Priority > *issues[1].Priority {
-			// 验证优先级升序排序
-		}
-	}
+	// 验证排序函数存在并可工作
+	// sortForDispatch 会对优先级升序排序，同优先级按创建时间排序
 
-	// 相同优先级，按创建时间排序
-	if issues[0].Priority != nil && issues[3].Priority != nil &&
-		*issues[0].Priority == *issues[3].Priority {
-		if issues[0].CreatedAt != nil && issues[3].CreatedAt != nil {
-			if issues[0].CreatedAt.Before(*issues[3].CreatedAt) {
-				// 较早创建的应该在前
-			}
-		}
-	}
-
-	// 相同优先级和创建时间，按标识符排序
+	// 使用 issues 变量避免未使用警告
 	_ = issues
 
 	// 使用 orch 变量避免未使用警告
@@ -765,7 +740,7 @@ func TestTransitionToNeedsAttentionLocked_Success(t *testing.T) {
 	taskID := "test-task-1"
 
 	// 初始化工作流
-	orch.InitTaskWorkflow(taskID)
+	_, _ = orch.InitTaskWorkflow(taskID)
 
 	// 记录状态变更回调
 	callbackCalled := false
@@ -824,7 +799,7 @@ func TestOnWorkerExit_RetryNotAtLimit(t *testing.T) {
 	identifier := "TEST-RETRY"
 
 	// 初始化工作流
-	orch.InitTaskWorkflow(taskID)
+	_, _ = orch.InitTaskWorkflow(taskID)
 
 	// 模拟运行中状态
 	orch.GetState().Running[taskID] = &domain.RunningEntry{
@@ -862,7 +837,7 @@ func TestOnWorkerExit_RetryAtLimit(t *testing.T) {
 	identifier := "TEST-LIMIT"
 
 	// 初始化工作流
-	orch.InitTaskWorkflow(taskID)
+	_, _ = orch.InitTaskWorkflow(taskID)
 
 	// 模拟运行中状态
 	orch.GetState().Running[taskID] = &domain.RunningEntry{
@@ -922,7 +897,7 @@ func TestOnWorkerExit_NoError(t *testing.T) {
 	identifier := "TEST-SUCCESS"
 
 	// 初始化工作流
-	orch.InitTaskWorkflow(taskID)
+	_, _ = orch.InitTaskWorkflow(taskID)
 
 	// 模拟运行中状态
 	orch.GetState().Running[taskID] = &domain.RunningEntry{
@@ -989,7 +964,7 @@ func TestGetNeedsAttentionTasks(t *testing.T) {
 
 	// 添加一个待人工处理的任务
 	taskID := "needs-attention-1"
-	orch.InitTaskWorkflow(taskID)
+	_, _ = orch.InitTaskWorkflow(taskID)
 	orch.transitionToNeedsAttentionLocked(taskID, "TEST-NA", 3, "test error")
 
 	// 等待异步操作完成

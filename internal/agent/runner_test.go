@@ -91,11 +91,6 @@ func TestNewRunner(t *testing.T) {
 			if runnerType != tt.expected {
 				t.Errorf("NewRunner() = %v, want %v", runnerType, tt.expected)
 			}
-
-			// 验证 runner 实现了 Runner 接口
-			if _, ok := runner.(Runner); !ok {
-				t.Error("runner should implement Runner interface")
-			}
 		})
 	}
 }
@@ -179,11 +174,6 @@ func TestNewRunnerAllKinds(t *testing.T) {
 			if runner == nil {
 				t.Fatalf("kind=%q: expected non-nil runner", kind)
 			}
-
-			// 验证 runner 实现了 Runner 接口
-			if _, ok := runner.(Runner); !ok {
-				t.Fatalf("kind=%q: runner should implement Runner interface", kind)
-			}
 		})
 	}
 }
@@ -227,8 +217,8 @@ func TestRunnerInterface(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			runner := NewRunner(tt.config)
-			if _, ok := runner.(Runner); !ok {
-				t.Errorf("%s runner does not implement Runner interface", tt.name)
+			if runner == nil {
+				t.Errorf("%s runner is nil", tt.name)
 			}
 		})
 	}

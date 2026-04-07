@@ -143,7 +143,7 @@ func parseLevel(levelStr string) slog.Level {
 func GetLogger() *slog.Logger {
 	if defaultLogger == nil {
 		// 如果未初始化，使用默认配置
-		Initialize(DefaultLoggingConfig())
+		_ = Initialize(DefaultLoggingConfig())
 	}
 	return defaultLogger
 }

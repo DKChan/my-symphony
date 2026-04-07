@@ -95,7 +95,7 @@ func runInitCommand() {
 	projectPath := initFlags.String("path", "", "项目路径（默认: 当前目录）")
 	nonInteractive := initFlags.Bool("non-interactive", false, "非交互模式")
 
-	initFlags.Parse(os.Args[2:])
+	_ = initFlags.Parse(os.Args[2:])
 
 	opts := cli.InitOptions{
 		TrackerType:    *trackerType,

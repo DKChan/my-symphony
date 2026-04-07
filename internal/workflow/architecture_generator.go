@@ -1122,13 +1122,13 @@ func ParseTDDRulesMarkdown(content string) (*TDDRules, error) {
 
 		// 内容解析
 		if currentRule != nil {
-			if strings.HasPrefix(line, "**Given:**") || strings.HasPrefix(line, "**Given:**") {
+			if strings.HasPrefix(line, "**Given:**") {
 				currentSection = "given"
 				continue
-			} else if strings.HasPrefix(line, "**When:**") || strings.HasPrefix(line, "**When:**") {
+			} else if strings.HasPrefix(line, "**When:**") {
 				currentSection = "when"
 				continue
-			} else if strings.HasPrefix(line, "**Then:**") || strings.HasPrefix(line, "**Then:**") {
+			} else if strings.HasPrefix(line, "**Then:**") {
 				currentSection = "then"
 				continue
 			} else if strings.HasPrefix(line, "**优先级:**") {
@@ -1206,7 +1206,7 @@ func (g *ArchitectureGenerator) TriggerArchitectureGeneration(
 	result, err := g.GenerateArchitecture(ctx, task, bddRules, clarificationHistory)
 	if err != nil {
 		// 生成失败，标记阶段失败
-		g.engine.FailStage(task.ID, fmt.Sprintf("Architecture generation failed: %v", err))
+		_, _ = g.engine.FailStage(task.ID, fmt.Sprintf("Architecture generation failed: %v", err))
 		return result, err
 	}
 

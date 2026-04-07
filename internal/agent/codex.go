@@ -97,8 +97,8 @@ func (s *codexSession) stop() {
 		s.stdin.Close()
 	}
 	if s.cmd != nil && s.cmd.Process != nil {
-		s.cmd.Process.Kill()
-		s.cmd.Wait()
+		_ = s.cmd.Process.Kill()
+		_ = s.cmd.Wait()
 	}
 }
 
@@ -230,7 +230,7 @@ func (r *codexRunner) startSession(ctx context.Context, workspacePath string) (*
 
 	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
 	cmd.Dir = workspacePath
-	cmd.Env = append(os.Environ())
+	cmd.Env = os.Environ()
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -244,7 +244,7 @@ func (r *codexRunner) startSession(ctx context.Context, workspacePath string) (*
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		stdin.Close()
-		stdout.(io.ReadCloser).Close()
+		stdout.Close()
 		return nil, fmt.Errorf("stderr pipe: %w", err)
 	}
 
@@ -466,7 +466,7 @@ func (r *codexRunner) processMessage(
 	// 自动审批
 	if method == "item/tool/call" || strings.HasPrefix(method, "approval/") {
 		if id, ok := msg["id"].(float64); ok && id != 0 {
-			session.sendRequest(map[string]any{
+			_ = session.sendRequest(map[string]any{
 				"id":     int(id),
 				"result": map[string]any{"approved": true},
 			})

@@ -102,12 +102,15 @@ func BuildKanbanPayload(orch *domain.OrchestratorState, now time.Time) *common.K
 		}
 
 		task := buildKanbanTaskFromRunning(entry, now)
-		if col, ok := columnsMap[stage]; ok {
+		// 将任务阶段映射到看板列
+			kanbanCol := common.TaskStageToKanbanColumn(stage)
+
+			if col, ok := columnsMap[kanbanCol]; ok {
 			col.Tasks = append(col.Tasks, task)
 			col.TaskCount++
 		} else {
-			// 未知阶段放入实现中
-			if col, ok := columnsMap["implementation"]; ok {
+			// 未知阶段放入生成器中
+			if col, ok := columnsMap["generator"]; ok {
 				col.Tasks = append(col.Tasks, task)
 				col.TaskCount++
 			}
@@ -117,7 +120,7 @@ func BuildKanbanPayload(orch *domain.OrchestratorState, now time.Time) *common.K
 	// 处理重试中的任务，放入待人工处理列
 	for _, entry := range orch.RetryAttempts {
 		task := buildKanbanTaskFromRetry(entry)
-		if col, ok := columnsMap["needs_attention"]; ok {
+		if col, ok := columnsMap[common.TaskStageToKanbanColumn("needs_attention")]; ok {
 			col.Tasks = append(col.Tasks, task)
 			col.TaskCount++
 		}
@@ -205,7 +208,13 @@ func buildKanbanTaskFromRetry(entry *domain.RetryEntry) common.KanbanTaskPayload
 // getStageIconSVG 获取阶段图标 SVG
 func getStageIconSVG(stageID string) string {
 	icons := map[string]string{
+		// 看板列图标 (P-G-E 模式)
 		"backlog":           `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
+		"planner":           `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H2"/><path d="M22 3h-6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><line x1="12" y1="3" x2="12" y2="21"/></svg>`,
+		"generator":         `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+		"evaluator":         `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+		"done":              `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="16 6 9 17 4 12"/></svg>`,
+		// 任务阶段图标 (用于任务详情显示)
 		"clarification":     `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
 		"bdd_review":        `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
 		"architecture_review": `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>`,

@@ -533,7 +533,7 @@ func renderLogsList(logs []workflow.ExecutionLog) string {
 	for _, log := range logs {
 		eventClass := getLogEventClass(log.Event)
 		dataHTML := ""
-		if log.Data != nil && len(log.Data) > 0 {
+		if len(log.Data) > 0 {
 			dataHTML = fmt.Sprintf(`<div class="log-data">%s</div>`, common.PrettyValue(log.Data))
 		}
 

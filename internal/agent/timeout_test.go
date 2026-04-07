@@ -509,11 +509,6 @@ func TestRunnerCreationWithNoTimeout(t *testing.T) {
 			if runner == nil {
 				t.Fatalf("%s runner 创建失败", r.name)
 			}
-
-			// 验证 runner 实现了接口
-			if _, ok := runner.(Runner); !ok {
-				t.Errorf("%s runner 未实现 Runner 接口", r.name)
-			}
 		})
 	}
 }

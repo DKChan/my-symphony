@@ -119,22 +119,6 @@ func (c *FileClient) submitWrite(fn func() error) error {
 	}
 }
 
-// submitWriteAsync 提交异步写入请求
-func (c *FileClient) submitWriteAsync(fn func() error) {
-	req := &writeRequest{
-		fn:   fn,
-		done: nil, // 异步，不需要等待
-	}
-
-	select {
-	case c.writeQueue <- req:
-		// 已提交
-	default:
-		// 队列满，记录警告
-		logging.Warn("write queue full, dropping write request")
-	}
-}
-
 // SetTimeout 设置超时时间
 func (c *FileClient) SetTimeout(timeout time.Duration) {
 	c.timeout = timeout
@@ -194,7 +178,7 @@ func (c *FileClient) FetchIssueStatesByIDs(ctx context.Context, ids []string) ([
 
 // CreateTask 创建新任务
 func (c *FileClient) CreateTask(ctx context.Context, title, description string) (*domain.Issue, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	_, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	// 生成任务 ID
@@ -220,7 +204,7 @@ func (c *FileClient) CreateTask(ctx context.Context, title, description string) 
 
 // CreateSubTask 创建子任务（带依赖关系）
 func (c *FileClient) CreateSubTask(ctx context.Context, parentIdentifier string, title, description string, blockedBy []string) (*domain.Issue, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	_, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	taskDir := filepath.Join(c.baseDir, parentIdentifier)
@@ -256,7 +240,7 @@ func (c *FileClient) CreateSubTask(ctx context.Context, parentIdentifier string,
 
 // GetTask 获取单个任务详情
 func (c *FileClient) GetTask(ctx context.Context, identifier string) (*domain.Issue, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	_, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	taskDir := filepath.Join(c.baseDir, identifier)
@@ -329,7 +313,7 @@ func (c *FileClient) UpdateStage(ctx context.Context, identifier string, stage d
 
 // GetStageState 获取任务的阶段状态（用于崩溃恢复）
 func (c *FileClient) GetStageState(ctx context.Context, identifier string) (*domain.StageState, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	_, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	taskDir := filepath.Join(c.baseDir, identifier)
@@ -367,7 +351,7 @@ func (c *FileClient) GetStageState(ctx context.Context, identifier string) (*dom
 
 // AppendConversation 追加对话记录
 func (c *FileClient) AppendConversation(ctx context.Context, identifier string, turn domain.ConversationTurn) error {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	_, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	// identifier 是子任务 ID，如 "SYM-001-P1"
@@ -411,7 +395,7 @@ func (c *FileClient) AppendConversation(ctx context.Context, identifier string, 
 
 // GetConversationHistory 获取对话历史记录
 func (c *FileClient) GetConversationHistory(ctx context.Context, identifier string) ([]domain.ConversationTurn, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	_, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	parentID, subTaskType, subTaskNum := parseSubTaskID(identifier)
@@ -433,7 +417,7 @@ func (c *FileClient) GetConversationHistory(ctx context.Context, identifier stri
 
 // ListTasksByState 按状态获取任务列表
 func (c *FileClient) ListTasksByState(ctx context.Context, states []string) ([]*domain.Issue, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	_, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	var issues []*domain.Issue
@@ -639,7 +623,7 @@ func (c *FileClient) getSubTaskFilePath(taskDir string, subTaskType string, subT
 	case "evaluator", "e":
 		return filepath.Join(taskDir, "Evaluator", fmt.Sprintf("E%d-%s-v%d.md", subTaskNum, name, version))
 	}
-	return filepath.Join(taskDir, strings.Title(subTaskType), fmt.Sprintf("%s%d-%s-v%d.md", strings.ToUpper(subTaskType[:1]), subTaskNum, name, version))
+	return filepath.Join(taskDir, strings.ToUpper(subTaskType[:1])+subTaskType[1:], fmt.Sprintf("%s%d-%s-v%d.md", strings.ToUpper(subTaskType[:1]), subTaskNum, name, version))
 }
 
 // findSubTaskFiles 查找子任务文件（所有版本）
@@ -1025,7 +1009,6 @@ func (c *FileClient) updateSubTaskStatus(ctx context.Context, identifier string,
 	}
 	name := fm["name"].(string)
 	statusMark := statusToMark(status)
-	content = updateSubTaskStatusInContent(content, strings.ToUpper(subTaskType[:1]), subTaskNum, name, version, statusMark)
 
 	taskFile := filepath.Join(taskDir, taskFileName)
 	taskData, err := os.ReadFile(taskFile)

@@ -374,7 +374,7 @@ func TestFailStageAndAdvance(t *testing.T) {
 	engine.InitWorkflow(taskID)
 
 	// 标记失败
-	engine.FailStage(taskID, "test failure")
+	_, _ = engine.FailStage(taskID, "test failure")
 
 	// 尝试推进应该失败
 	_, err := engine.AdvanceStage(taskID)
@@ -497,7 +497,7 @@ func TestResetStage(t *testing.T) {
 
 	// 初始化工作流并推进
 	engine.InitWorkflow(taskID)
-	engine.AdvanceStage(taskID) // clarification -> bdd_review
+	_, _ = engine.AdvanceStage(taskID) // clarification -> bdd_review
 
 	// 重置clarification阶段
 	err := engine.ResetStage(taskID, workflow.StageClarification)
@@ -592,10 +592,10 @@ func TestTaskWorkflowMethods(t *testing.T) {
 	}
 
 	// 推进到最后阶段
-	engine.AdvanceStage(taskID)
-	engine.AdvanceStage(taskID)
-	engine.AdvanceStage(taskID)
-	engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	wf = engine.GetWorkflow(taskID)
 
@@ -627,7 +627,7 @@ func TestEngineWithPersistPath(t *testing.T) {
 	}
 
 	// 推进阶段
-	engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	// 创建新引擎加载持久化数据
 	engine2 := workflow.NewEngine(workflow.WithPersistPath(persistPath))
@@ -647,7 +647,7 @@ func TestEngineIncrementRound(t *testing.T) {
 	taskID := "test-round"
 
 	// 初始化任务
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 增加轮次
 	round, err := engine.IncrementRound(taskID)
@@ -665,7 +665,7 @@ func TestEngineSetStageStatus(t *testing.T) {
 	taskID := "test-status"
 
 	// 初始化任务
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 设置阶段状态
 	err := engine.SetStageStatus(taskID, workflow.StageClarification, workflow.StatusCompleted)
@@ -689,11 +689,11 @@ func TestEngineGetStageHistory(t *testing.T) {
 	taskID := "test-history"
 
 	// 初始化任务
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 推进两个阶段
-	engine.AdvanceStage(taskID)
-	engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	// 获取历史
 	history, err := engine.GetStageHistory(taskID)
@@ -718,19 +718,19 @@ func TestEngineListWorkflows(t *testing.T) {
 	engine := workflow.NewEngine()
 
 	// 初始化多个任务
-	engine.InitTask("task-1")
-	engine.InitTask("task-2")
-	engine.InitTask("task-3")
+	_, _ = engine.InitTask("task-1")
+	_, _ = engine.InitTask("task-2")
+	_, _ = engine.InitTask("task-3")
 
 	// 推进task-1到完成
-	engine.AdvanceStage("task-1")
-	engine.AdvanceStage("task-1")
-	engine.AdvanceStage("task-1")
-	engine.AdvanceStage("task-1")
-	engine.AdvanceStage("task-1")
+	_, _ = engine.AdvanceStage("task-1")
+	_, _ = engine.AdvanceStage("task-1")
+	_, _ = engine.AdvanceStage("task-1")
+	_, _ = engine.AdvanceStage("task-1")
+	_, _ = engine.AdvanceStage("task-1")
 
 	// 标记task-2失败
-	engine.FailStage("task-2", "test failure")
+	_, _ = engine.FailStage("task-2", "test failure")
 
 	// 测试ListWorkflows
 	all := engine.ListWorkflows()
@@ -761,17 +761,17 @@ func TestEngineGetWorkflowStats(t *testing.T) {
 	engine := workflow.NewEngine()
 
 	// 初始化多个任务
-	engine.InitTask("task-1")
-	engine.InitTask("task-2")
-	engine.InitTask("task-3")
+	_, _ = engine.InitTask("task-1")
+	_, _ = engine.InitTask("task-2")
+	_, _ = engine.InitTask("task-3")
 
 	// 推进task-1到完成
 	for i := 0; i < 5; i++ {
-		engine.AdvanceStage("task-1")
+		_, _ = engine.AdvanceStage("task-1")
 	}
 
 	// 标记task-2失败
-	engine.FailStage("task-2", "test failure")
+	_, _ = engine.FailStage("task-2", "test failure")
 
 	// 获取统计
 	stats := engine.GetWorkflowStats()
@@ -830,7 +830,7 @@ func TestEngineRemoveTask(t *testing.T) {
 
 	// 初始化任务
 	taskID := "remove-test"
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 移除任务
 	engine.RemoveTask(taskID)
@@ -900,7 +900,7 @@ func TestTaskWorkflowCompleteAndFailed(t *testing.T) {
 
 	// 推进到完成
 	for i := 0; i < 5; i++ {
-		engine.AdvanceStage(taskID)
+		_, _ = engine.AdvanceStage(taskID)
 	}
 
 	wf = engine.GetWorkflow(taskID)
@@ -911,7 +911,7 @@ func TestTaskWorkflowCompleteAndFailed(t *testing.T) {
 	// 测试失败场景
 	taskID2 := "failed-test"
 	engine.InitWorkflow(taskID2)
-	engine.FailStage(taskID2, "test reason")
+	_, _ = engine.FailStage(taskID2, "test reason")
 
 	wf2 := engine.GetWorkflow(taskID2)
 	if !wf2.IsFailed() {
@@ -940,7 +940,7 @@ func TestStageStateTimeFields(t *testing.T) {
 	}
 
 	// 推进阶段
-	engine.AdvanceStage(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	// 获取clarification阶段（现在已完成）
 	wf := engine.GetWorkflow(taskID)
@@ -957,7 +957,7 @@ func TestEngineGetCurrentStage(t *testing.T) {
 	taskID := "engine-current-stage"
 
 	// 初始化任务
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 获取当前阶段
 	stage, err := engine.GetCurrentStage(taskID)
@@ -981,7 +981,7 @@ func TestEngineSetRound(t *testing.T) {
 	taskID := "engine-set-round"
 
 	// 初始化任务
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 设置轮次
 	err := engine.SetRound(taskID, 5)
@@ -1007,7 +1007,7 @@ func TestConcurrentAccess(t *testing.T) {
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
 		go func() {
-			engine.AdvanceStage(taskID)
+			_, _ = engine.AdvanceStage(taskID)
 			done <- true
 		}()
 	}
@@ -1054,8 +1054,8 @@ func TestEngine_ApproveBDD(t *testing.T) {
 	taskID := "bdd-approve-test"
 
 	// 初始化任务并推进到 BDD 审核阶段
-	engine.InitTask(taskID)
-	engine.AdvanceStage(taskID) // clarification -> bdd_review
+	_, _ = engine.InitTask(taskID)
+	_, _ = engine.AdvanceStage(taskID) // clarification -> bdd_review
 
 	// 验证当前阶段
 	wf := engine.GetWorkflow(taskID)
@@ -1092,7 +1092,7 @@ func TestEngine_ApproveBDD_NotInBDDReviewStage(t *testing.T) {
 	taskID := "bdd-approve-invalid"
 
 	// 初始化任务（在澄清阶段）
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 尝试通过 BDD 审核（应该失败）
 	_, err := engine.ApproveBDD(taskID)
@@ -1116,8 +1116,8 @@ func TestEngine_RejectBDD(t *testing.T) {
 	taskID := "bdd-reject-test"
 
 	// 初始化任务并推进到 BDD 审核阶段
-	engine.InitTask(taskID)
-	engine.AdvanceStage(taskID) // clarification -> bdd_review
+	_, _ = engine.InitTask(taskID)
+	_, _ = engine.AdvanceStage(taskID) // clarification -> bdd_review
 
 	// 验证当前阶段
 	wf := engine.GetWorkflow(taskID)
@@ -1165,7 +1165,7 @@ func TestEngine_RejectBDD_NotInBDDReviewStage(t *testing.T) {
 	taskID := "bdd-reject-invalid"
 
 	// 初始化任务（在澄清阶段）
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 尝试驳回 BDD 审核（应该失败）
 	_, err := engine.RejectBDD(taskID, "test reason")
@@ -1189,8 +1189,8 @@ func TestEngine_RejectBDD_EmptyReason(t *testing.T) {
 	taskID := "bdd-reject-empty"
 
 	// 初始化任务并推进到 BDD 审核阶段
-	engine.InitTask(taskID)
-	engine.AdvanceStage(taskID)
+	_, _ = engine.InitTask(taskID)
+	_, _ = engine.AdvanceStage(taskID)
 
 	// 驳回 BDD 审核（空原因）
 	wf, err := engine.RejectBDD(taskID, "")
@@ -1211,7 +1211,7 @@ func TestEngine_TransitionToNeedsAttention(t *testing.T) {
 	taskID := "needs-attention-test"
 
 	// 初始化任务
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 构建失败详情
 	details := workflow.NeedsAttentionDetails{
@@ -1257,7 +1257,7 @@ func TestEngine_ResumeTask(t *testing.T) {
 	taskID := "resume-test"
 
 	// 初始化任务并流转到 needs_attention
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 	details := workflow.NeedsAttentionDetails{
 		FailedStage:  "implementation",
 		FailedAt:     time.Now(),
@@ -1265,7 +1265,7 @@ func TestEngine_ResumeTask(t *testing.T) {
 		MaxRetries:   3,
 		ErrorMessage: "test error",
 	}
-	engine.TransitionToNeedsAttention(taskID, details)
+	_, _ = engine.TransitionToNeedsAttention(taskID, details)
 
 	// 恢复任务
 	wf, err := engine.ResumeTask(taskID)
@@ -1290,10 +1290,10 @@ func TestEngine_HasReachedMaxRetries(t *testing.T) {
 	taskID := "max-retries-test"
 
 	// 初始化任务
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 设置最大重试次数
-	engine.SetMaxRetries(taskID, 3)
+	_ = engine.SetMaxRetries(taskID, 3)
 
 	// 测试未达到上限
 	reached, err := engine.HasReachedMaxRetries(taskID)
@@ -1306,7 +1306,7 @@ func TestEngine_HasReachedMaxRetries(t *testing.T) {
 
 	// 增加重试次数到 3
 	for i := 0; i < 3; i++ {
-		engine.IncrementRetryCount(taskID)
+		_, _ = engine.IncrementRetryCount(taskID)
 	}
 
 	// 测试已达到上限
@@ -1325,7 +1325,7 @@ func TestEngine_ResumeTask_InvalidStage(t *testing.T) {
 	taskID := "resume-invalid"
 
 	// 初始化任务（在澄清阶段）
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 尝试恢复（应该失败）
 	_, err := engine.ResumeTask(taskID)
@@ -1340,14 +1340,14 @@ func TestEngine_ResumeTask_ResetRetryCount(t *testing.T) {
 	taskID := "resume-reset-retry"
 
 	// 初始化任务并流转到 needs_attention，设置重试计数
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 	details := workflow.NeedsAttentionDetails{
 		FailedStage:  "implementation",
 		RetryCount:   5,
 		MaxRetries:   5,
 		ErrorMessage: "test error",
 	}
-	engine.TransitionToNeedsAttention(taskID, details)
+	_, _ = engine.TransitionToNeedsAttention(taskID, details)
 
 	// 验证重试计数为 5
 	wf := engine.GetWorkflow(taskID)
@@ -1379,7 +1379,7 @@ func TestEngine_GetFailureDetails(t *testing.T) {
 	taskID := "failure-details-test"
 
 	// 初始化任务并流转到 needs_attention
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 	details := workflow.NeedsAttentionDetails{
 		FailedStage:    "implementation",
 		FailedAt:       time.Now(),
@@ -1390,7 +1390,7 @@ func TestEngine_GetFailureDetails(t *testing.T) {
 		LastLogSnippet: "last log line",
 		Suggestion:     "check the error",
 	}
-	engine.TransitionToNeedsAttention(taskID, details)
+	_, _ = engine.TransitionToNeedsAttention(taskID, details)
 
 	// 获取失败详情
 	failureDetails, err := engine.GetFailureDetails(taskID)
@@ -1426,14 +1426,14 @@ func TestEngine_GetNeedsAttentionTasks(t *testing.T) {
 	// 添加两个待人工处理的任务
 	for i := 1; i <= 2; i++ {
 		taskID := fmt.Sprintf("needs-attention-%d", i)
-		engine.InitTask(taskID)
+		_, _ = engine.InitTask(taskID)
 		details := workflow.NeedsAttentionDetails{
 			FailedStage:  "implementation",
 			RetryCount:   3,
 			MaxRetries:   3,
 			ErrorMessage: "test error",
 		}
-		engine.TransitionToNeedsAttention(taskID, details)
+		_, _ = engine.TransitionToNeedsAttention(taskID, details)
 	}
 
 	// 验证列表包含两个任务
@@ -1449,14 +1449,14 @@ func TestEngine_ReclarifyTask(t *testing.T) {
 	taskID := "reclarify-test"
 
 	// 初始化任务并流转到 needs_attention
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 	details := workflow.NeedsAttentionDetails{
 		FailedStage:  "implementation",
 		RetryCount:   3,
 		MaxRetries:   3,
 		ErrorMessage: "test error",
 	}
-	engine.TransitionToNeedsAttention(taskID, details)
+	_, _ = engine.TransitionToNeedsAttention(taskID, details)
 
 	// 重新澄清需求
 	wf, err := engine.ReclarifyTask(taskID)
@@ -1492,14 +1492,14 @@ func TestEngine_AbandonTask(t *testing.T) {
 	taskID := "abandon-test"
 
 	// 初始化任务并流转到 needs_attention
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 	details := workflow.NeedsAttentionDetails{
 		FailedStage:  "implementation",
 		RetryCount:   3,
 		MaxRetries:   3,
 		ErrorMessage: "test error",
 	}
-	engine.TransitionToNeedsAttention(taskID, details)
+	_, _ = engine.TransitionToNeedsAttention(taskID, details)
 
 	// 放弃任务
 	wf, err := engine.AbandonTask(taskID)
@@ -1524,7 +1524,7 @@ func TestEngine_IncrementRetryCount(t *testing.T) {
 	taskID := "retry-count-test"
 
 	// 初始化任务
-	engine.InitTask(taskID)
+	_, _ = engine.InitTask(taskID)
 
 	// 增加重试计数
 	for i := 1; i <= 3; i++ {

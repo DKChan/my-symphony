@@ -275,32 +275,6 @@ func (o *Orchestrator) hasAvailableSlots() bool {
 	return runningCount < o.state.MaxConcurrentAgents
 }
 
-// getAvailableSlotsForState 获取特定状态的可用槽位
-func (o *Orchestrator) getAvailableSlotsForState(state string) int {
-	normalizedState := strings.ToLower(strings.TrimSpace(state))
-
-	// 检查按状态的并发限制
-	if limit, ok := o.cfg.Agent.MaxConcurrentAgentsByState[normalizedState]; ok {
-		o.mu.RLock()
-		defer o.mu.RUnlock()
-
-		count := 0
-		for _, entry := range o.state.Running {
-			if entry.Issue != nil && strings.ToLower(entry.Issue.State) == normalizedState {
-				count++
-			}
-		}
-		return limit - count
-	}
-
-	// 使用全局限制
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-
-	runningCount := len(o.state.Running)
-	return o.state.MaxConcurrentAgents - runningCount
-}
-
 // sortForDispatch 为调度排序问题
 func (o *Orchestrator) sortForDispatch(issues []*domain.Issue) []*domain.Issue {
 	sort.Slice(issues, func(i, j int) bool {
@@ -410,7 +384,7 @@ func (o *Orchestrator) runWorker(ctx context.Context, issue *domain.Issue, attem
 	)
 
 	// 运行 after_run 钩子
-	o.workspaceMgr.RunAfterRunHook(ctx, ws.Path)
+	_ = o.workspaceMgr.RunAfterRunHook(ctx, ws.Path)
 
 	if err != nil {
 		logging.LogAgentError(issue.ID, issue.Identifier, err)
@@ -1019,7 +993,7 @@ func (o *Orchestrator) runWorkerWithCancel(parentCtx context.Context, issue *dom
 
 	// 初始化任务工作流（如果不存在）
 	if o.workflowEngine.GetWorkflow(issue.ID) == nil {
-		o.workflowEngine.InitTask(issue.ID)
+		_, _ = o.workflowEngine.InitTask(issue.ID)
 	}
 
 	// 使用原有的 runWorker 逻辑

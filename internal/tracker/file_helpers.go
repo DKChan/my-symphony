@@ -3,7 +3,6 @@ package tracker
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -215,20 +214,6 @@ func statusToMark(status string) string {
 	}
 }
 
-// markToStatus 将标记转换为状态
-func markToStatus(mark string) string {
-	switch mark {
-	case "✅":
-		return "completed"
-	case "❌":
-		return "failed"
-	case "⏳":
-		return "in-progress"
-	default:
-		return "pending"
-	}
-}
-
 // stageToStatus 将阶段状态转换为任务状态
 func stageToStatus(stageStatus string) string {
 	switch strings.ToLower(stageStatus) {
@@ -316,13 +301,4 @@ func updateSubTaskStatus(content, typeChar string, num int, name string, version
 // updateSubTaskStatusInContent 更新内容中的子任务状态
 func updateSubTaskStatusInContent(content, typeChar string, num int, name string, version int, statusMark string) string {
 	return updateSubTaskStatus(content, typeChar, num, name, version, statusMark)
-}
-
-// parseJSONData 解析 JSON 数据到 map
-func parseJSONData(data []byte) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
 }

@@ -176,7 +176,7 @@ func TestMockClient_ConversationHistory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if history != nil && len(history) != 0 {
+		if len(history) != 0 {
 			t.Errorf("expected empty history, got %d turns", len(history))
 		}
 	})

@@ -53,7 +53,7 @@ func TestNewConstraintManager(t *testing.T) {
 	cm := NewConstraintManager(engine, tempDir)
 
 	if cm == nil {
-		t.Error("expected non-nil constraint manager")
+		t.Fatal("expected non-nil constraint manager")
 	}
 	if cm.engine != engine {
 		t.Error("engine not set correctly")
@@ -469,9 +469,9 @@ func TestGetCachedConstraints(t *testing.T) {
 	}
 
 	// 获取缓存
- cached := cm.GetCachedConstraints(taskID)
+	cached := cm.GetCachedConstraints(taskID)
 	if cached == nil {
-		t.Error("expected cached constraints")
+		t.Fatal("expected cached constraints")
 	}
 	if cached.TaskID != taskID {
 		t.Errorf("unexpected cached taskID")

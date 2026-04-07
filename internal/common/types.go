@@ -138,20 +138,25 @@ var KanbanStages = []KanbanStageConfig{
 // TaskStageToKanbanColumn 任务阶段到看板列的映射
 // 规划器阶段: clarification, bdd_review, architecture_review
 // 生成器阶段: implementation, testing
-// 评估器阶段: verification, review
-// 已完成: completed, cancelled, needs_attention
+// 评估器阶段: verification, review, needs_attention
+// 已完成: completed, cancelled
 func TaskStageToKanbanColumn(taskStage string) string {
+	// 空字符串表示未开始，放入 backlog
+	if taskStage == "" {
+		return "backlog"
+	}
 	switch taskStage {
 	case "clarification", "bdd_review", "architecture_review":
 		return "planner"
 	case "implementation", "testing":
 		return "generator"
-	case "verification", "review":
+	case "verification", "review", "needs_attention":
 		return "evaluator"
-	case "completed", "cancelled", "needs_attention":
+	case "completed", "cancelled":
 		return "done"
 	default:
-		return "backlog"
+		// 未知阶段放入生成器（正在运行的任务）
+		return "generator"
 	}
 }
 

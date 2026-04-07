@@ -152,7 +152,7 @@ func TestBuildKanbanPayload_Empty(t *testing.T) {
 
 	assert.NotNil(t, payload)
 	assert.NotEmpty(t, payload.GeneratedAt)
-	assert.Equal(t, 9, len(payload.Columns)) // 9 个阶段列
+	assert.Equal(t, 5, len(payload.Columns)) // 5 个阶段列 (P-G-E: backlog, planner, generator, evaluator, done)
 	assert.Equal(t, 0, payload.TotalTasks)
 
 	// 检查所有列都是空的
@@ -208,10 +208,10 @@ func TestBuildKanbanPayload_WithRunningEntries(t *testing.T) {
 	assert.NotNil(t, payload)
 	assert.Equal(t, 2, payload.TotalTasks)
 
-	// 检查 implementation 列有 1 个任务
+	// 检查 generator 列有 1 个任务 (implementation 阶段映射到 generator)
 	var implCol *common.KanbanColumn
 	for i, col := range payload.Columns {
-		if col.ID == "implementation" {
+		if col.ID == "generator" {
 			implCol = &payload.Columns[i]
 			break
 		}
@@ -223,10 +223,10 @@ func TestBuildKanbanPayload_WithRunningEntries(t *testing.T) {
 	assert.Equal(t, "Implement Feature", implCol.Tasks[0].Title)
 	assert.Equal(t, "implementation", implCol.Tasks[0].Stage)
 
-	// 检查 clarification 列有 1 个任务
+	// 检查 planner 列有 1 个任务 (clarification 阶段映射到 planner)
 	var clarCol *common.KanbanColumn
 	for i, col := range payload.Columns {
-		if col.ID == "clarification" {
+		if col.ID == "planner" {
 			clarCol = &payload.Columns[i]
 			break
 		}
@@ -262,10 +262,10 @@ func TestBuildKanbanPayload_WithRetryEntries(t *testing.T) {
 	assert.NotNil(t, payload)
 	assert.Equal(t, 1, payload.TotalTasks)
 
-	// 重试任务应该放在 needs_attention 列
+	// 重试任务应该放在 evaluator 列 (needs_attention 映射到 evaluator)
 	var needsCol *common.KanbanColumn
 	for i, col := range payload.Columns {
-		if col.ID == "needs_attention" {
+		if col.ID == "evaluator" {
 			needsCol = &payload.Columns[i]
 			break
 		}
@@ -307,7 +307,7 @@ func TestBuildKanbanPayload_UnknownStage(t *testing.T) {
 	// 未知阶段应该放入 implementation 列
 	var implCol *common.KanbanColumn
 	for i, col := range payload.Columns {
-		if col.ID == "implementation" {
+		if col.ID == "generator" {
 			implCol = &payload.Columns[i]
 			break
 		}
@@ -345,7 +345,7 @@ func TestBuildKanbanPayload_EmptyStage(t *testing.T) {
 	// 空阶段默认放入 implementation 列
 	var implCol *common.KanbanColumn
 	for i, col := range payload.Columns {
-		if col.ID == "implementation" {
+		if col.ID == "generator" {
 			implCol = &payload.Columns[i]
 			break
 		}
