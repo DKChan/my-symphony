@@ -311,6 +311,7 @@ htmx-connected .status-badge-offline,
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
   min-height: 100%;
+  overflow: hidden;
 }
 
 .column-header {
@@ -357,6 +358,7 @@ htmx-connected .status-badge-offline,
 .task-list {
   flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -389,6 +391,10 @@ htmx-connected .status-badge-offline,
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .task-card:hover {
@@ -409,6 +415,9 @@ htmx-connected .status-badge-offline,
   color: #888;
   margin-bottom: 4px;
   font-family: 'Fira Code', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-title {
@@ -417,6 +426,9 @@ htmx-connected .status-badge-offline,
   line-height: 1.4;
   color: #f1f3f5;
   margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .task-meta {
@@ -425,6 +437,7 @@ htmx-connected .status-badge-offline,
   align-items: center;
   font-size: 11px;
   color: #868e96;
+  overflow: hidden;
 }
 
 .task-priority {
@@ -820,6 +833,10 @@ htmx-connected .status-badge-offline,
   border-radius: var(--radius-md);
   padding: 1rem;
   transition: all 0.25s ease;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .task-card:hover {
@@ -840,6 +857,9 @@ htmx-connected .status-badge-offline,
   font-weight: 700;
   font-size: 0.85rem;
   color: var(--ink-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-card-body {
@@ -853,11 +873,15 @@ htmx-connected .status-badge-offline,
   font-weight: 500;
   color: var(--ink);
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .task-meta {
   display: flex;
   gap: 1rem;
+  overflow: hidden;
 }
 
 .task-meta-item {
@@ -994,5 +1018,297 @@ htmx-connected .status-badge-offline,
 
   .column {
     min-width: 100%;
+  }
+}
+
+/* ========== Create Task Modal ========== */
+
+/* Modal 容器 */
+.create-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.create-modal.active {
+  display: flex;
+  animation: modal-bg-enter 0.2s ease;
+}
+
+@keyframes modal-bg-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Modal 内容容器 */
+.create-modal-content {
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xl);
+  padding: 0;
+  max-width: 520px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-card-hover);
+  animation: modal-content-enter 0.3s ease;
+}
+
+@keyframes modal-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Modal 头部 */
+.create-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.create-modal .modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.create-modal .modal-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink-bright);
+  margin: 0;
+}
+
+.create-modal .modal-close-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-modal .modal-close-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--ink);
+}
+
+/* Modal 内容区 */
+.create-modal .modal-body {
+  padding: 1.5rem;
+}
+
+.create-modal .modal-description {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+
+/* 表单样式 */
+.create-modal .form-group {
+  margin-bottom: 1rem;
+}
+
+.create-modal .form-label {
+  display: block;
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--ink-bright);
+  margin-bottom: 0.5rem;
+}
+
+.create-modal .form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--ink-bright);
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.create-modal .form-input:focus {
+  outline: none;
+  border-color: var(--accent-running);
+  box-shadow: 0 0 0 3px var(--accent-running-soft);
+}
+
+.create-modal .form-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--ink-bright);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  line-height: 1.5;
+  transition: all 0.2s ease;
+}
+
+.create-modal .form-textarea:focus {
+  outline: none;
+  border-color: var(--accent-running);
+  box-shadow: 0 0 0 3px var(--accent-running-soft);
+}
+
+/* 子任务预览 */
+.create-modal .subtask-preview {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.create-modal .subtask-preview-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-bright);
+  margin: 0 0 0.75rem 0;
+}
+
+.create-modal .subtask-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.create-modal .subtask-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--ink);
+  font-size: 0.85rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.create-modal .subtask-list li:last-child {
+  border-bottom: none;
+}
+
+.create-modal .stage-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--accent-running-soft);
+  color: var(--accent-running);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Modal 底部 */
+.create-modal .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.create-modal .btn-cancel {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  padding: 0.6rem 1.25rem;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.create-modal .btn-cancel:hover {
+  background: var(--bg-elevated);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.create-modal .btn-submit {
+  appearance: none;
+  border: none;
+  background: var(--accent-running);
+  color: white;
+  padding: 0.6rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.create-modal .btn-submit:hover {
+  background: #1cb4d8;
+  transform: translateY(-1px);
+}
+
+.create-modal .btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 响应式适配 */
+@media (max-width: 480px) {
+  .create-modal-content {
+    width: 95%;
+    max-height: 85vh;
+    border-radius: var(--radius-lg);
+  }
+
+  .create-modal .modal-header {
+    padding: 1rem;
+  }
+
+  .create-modal .modal-body {
+    padding: 1rem;
+  }
+
+  .create-modal .modal-footer {
+    padding: 1rem;
+    flex-direction: column-reverse;
+  }
+
+  .create-modal .btn-cancel,
+  .create-modal .btn-submit {
+    width: 100%;
+    justify-content: center;
   }
 }

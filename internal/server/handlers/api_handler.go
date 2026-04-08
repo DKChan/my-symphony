@@ -405,7 +405,7 @@ func getStateDisplayName(running *domain.RunningEntry, retry *domain.RetryEntry)
 // POST /api/tasks
 func (h *APIHandler) HandleCreateTask(c *gin.Context) {
 	var req TaskCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": map[string]string{
 				"code":    "task.validation_failed",

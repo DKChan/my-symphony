@@ -263,8 +263,8 @@ func RenderTaskFormHTML() string {
 
 // TaskCreateRequest 任务创建请求结构
 type TaskCreateRequest struct {
-	Title       string `json:"title" binding:"required"`
-	Description string `json:"description" binding:"required"`
+	Title       string `json:"title" form:"title" binding:"required"`
+	Description string `json:"description" form:"description" binding:"required"`
 }
 
 // TaskCreateResponse 任务创建响应结构

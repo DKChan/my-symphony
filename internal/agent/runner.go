@@ -46,6 +46,8 @@ func NewRunner(cfg *config.Config) Runner {
 		kind = "codex"
 	}
 	switch kind {
+	case "mock":
+		return newMockRunner(cfg)
 	case "claude":
 		return newClaudeRunner(cfg)
 	case "opencode":
